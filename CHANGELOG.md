@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- Polished the real panel to match the interface shown on the Pages site: gradient logo tile, header dots, shimmering progress bar, row cards, status dots, cleaner version text and a footer status light.
+- Widened the panel to 408px and strengthened its border, shadow and brand tint.
+- Kept the update/restart/batch behavior unchanged; this is a visual polish release.
+- Taught the headless render check about SVG attributes so the logo can be tested.
+
 ## 0.3.1
 
 - Added a GitHub Pages landing page (`site/`) deployed by `.github/workflows/pages.yml`.
