@@ -1,0 +1,7 @@
+# dsh-plugin-updater —— bundle patch
+#
+# 只插入一行 Host 插件。插件自身会在 dsh 启动时（即"上线"时）用纯 HTTP
+# 访问 npm registry 比较版本，不经过 LLM / agent，因此不消耗任何余额。
+- insert:
+    - id: plugin-updater
+      name: dsh-plugin-updater
