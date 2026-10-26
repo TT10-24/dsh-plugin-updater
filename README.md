@@ -3,7 +3,6 @@
 [![check](https://github.com/TT10-24/dsh-plugin-updater/actions/workflows/check.yml/badge.svg)](https://github.com/TT10-24/dsh-plugin-updater/actions/workflows/check.yml)
 [![pages](https://github.com/TT10-24/dsh-plugin-updater/actions/workflows/pages.yml/badge.svg)](https://tt10-24.github.io/dsh-plugin-updater/)
 [![license: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
-[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/daha1216/dsh-skills-manager)
 
 **你的 DSH 插件更新管家：插件、桌面端、内核，一次检查完，零 token 消耗。**
 
