@@ -35,5 +35,12 @@ jobs:
           node .check/render-check.mjs ./client.js
           node .check/drag-check.mjs ./client.js
 
+      - name: Site files
+        run: |
+          test -f site/index.html
+          test -f site/styles.css
+          test -f site/main.js
+          node --check site/main.js
+
       - name: Package contents
         run: npm pack --dry-run
