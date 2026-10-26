@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-updater",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Startup update checks for installed DSH plugins, DSH Desktop and the core, with a draggable panel, live progress and one-click updates — no agent calls, no token spend.",
   "license": "MIT",
   "author": "TT10-24 (https://github.com/TT10-24)",
@@ -8,7 +8,7 @@
     "type": "git",
     "url": "git+https://github.com/TT10-24/dsh-plugin-updater.git"
   },
-  "homepage": "https://github.com/TT10-24/dsh-plugin-updater#readme",
+  "homepage": "https://tt10-24.github.io/dsh-plugin-updater/",
   "bugs": {
     "url": "https://github.com/TT10-24/dsh-plugin-updater/issues"
   },
@@ -50,7 +50,9 @@
     "LICENSE",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
-    "docs/*.md"
+    "SECURITY.md",
+    "docs/*.md",
+    "docs/assets/*.svg"
   ],
   "publishConfig": {
     "access": "public"
