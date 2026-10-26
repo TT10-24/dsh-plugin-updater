@@ -1,0 +1,67 @@
+{
+  "name": "dsh-plugin-updater",
+  "version": "0.3.0",
+  "description": "Startup update checks for installed DSH plugins, DSH Desktop and the core, with a draggable panel, live progress and one-click updates — no agent calls, no token spend.",
+  "license": "MIT",
+  "author": "TT10-24 (https://github.com/TT10-24)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TT10-24/dsh-plugin-updater.git"
+  },
+  "homepage": "https://github.com/TT10-24/dsh-plugin-updater#readme",
+  "bugs": {
+    "url": "https://github.com/TT10-24/dsh-plugin-updater/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "plugin-updater",
+    "update-checker"
+  ],
+  "icon": "./icon.svg",
+  "meta": {
+    "title": {
+      "zh": "更新检查",
+      "en": "Update Checker"
+    },
+    "description": {
+      "zh": "上线时自动检查已安装插件、DSH 桌面端与内核版本；左侧可拖动面板提示，带实时进度、一键全部更新和重启按钮，全程不调用 agent、不消耗 token。",
+      "en": "Checks installed plugins, DSH Desktop and the core on every launch. A draggable panel shows live progress, updates everything in one click and offers a restart button — no agent calls, no token spend."
+    }
+  },
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon.svg": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "protocol.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "docs/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}
