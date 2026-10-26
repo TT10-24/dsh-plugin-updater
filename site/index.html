@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dsh-plugin-updater — 你的 DSH 更新管家</title>
+  <meta name="description" content="在 DSH 启动时检查插件、DSH Desktop 与内核更新。可拖动面板、实时进度、一键全部更新，全程不消耗 token。">
+  <meta property="og:title" content="dsh-plugin-updater — 你的 DSH 更新管家">
+  <meta property="og:description" content="插件、桌面端、内核，一次检查完。零 token，带进度条与一键全部更新。">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script>
+    (function () {
+      try {
+        var param = new URLSearchParams(location.search).get('theme');
+        var stored = localStorage.getItem('dsh-updater-theme');
+        var theme = (param === 'light' || param === 'dark')
+          ? param
+          : (stored || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+        document.documentElement.dataset.theme = theme;
+      } catch (error) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="dsh-plugin-updater 首页">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 4v9"></path>
+          <path d="m8 8 4-4 4 4"></path>
+          <path d="M5 15a7 7 0 0 0 14 0"></path>
+        </svg>
+      </span>
+      <span>dsh-plugin-updater</span>
+    </a>
+    <nav class="nav" aria-label="主导航">
+      <a href="#features">功能</a>
+      <a href="#interface">界面</a>
+      <a href="#install">安装</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+    <div class="header-actions">
+      <a class="ghost-link" href="https://github.com/TT10-24/dsh-plugin-updater" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+      <button class="icon-button" id="theme-toggle" type="button" aria-label="切换亮色/暗色主题" aria-pressed="false">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 13.1A8.5 8.5 0 1 1 10.9 3 6.7 6.7 0 0 0 21 13.1Z"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> 零 token · MIT · DSH Desktop 2.0+</p>
+        <h1><span class="headline-line">让 DSH 的每次更新，</span><br><span class="gradient">都一目了然。</span></h1>
+        <p class="lede">插件、DSH Desktop、内核，一次检查完。需要更新时，侧边栏旁会出现一个可拖动面板：实时进度、一键全部更新、需要时直接重启。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#install">安装到 DSH</a>
+          <a class="button" href="https://github.com/TT10-24/dsh-plugin-updater" target="_blank" rel="noreferrer">查看源码 <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="command" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater">
+          <span class="prompt" aria-hidden="true">$</span>
+          <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater</code>
+          <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater" aria-label="复制安装命令">复制</button>
+        </div>
+        <p class="fine">不调用模型 · 不产生 agent 轮次 · 更新交给 DSH 官方插件管理器与 pnpm</p>
+      </div>
+
+      <div class="hero-visual">
+        <div class="panel" role="img" aria-label="dsh-plugin-updater 面板界面示意图">
+          <div class="panel-titlebar">
+            <span class="panel-logo" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 4v9"></path>
+                <path d="m8 8 4-4 4 4"></path>
+                <path d="M5 15a7 7 0 0 0 14 0"></path>
+              </svg>
+            </span>
+            <span class="panel-heading"><strong>更新检查</strong><small>拖动标题栏移动</small></span>
+            <span class="panel-grip" aria-hidden="true">•••</span>
+          </div>
+          <div class="panel-progress">
+            <div class="progress-label"><span>正在更新 dsh-ops</span><b>68%</b></div>
+            <div class="progress-track"><i style="width:68%"></i></div>
+            <p>安装新版本 · 正在下载依赖…</p>
+          </div>
+          <div class="panel-section">
+            <span>插件</span>
+            <span class="count">3</span>
+            <button class="mini" type="button">全部更新</button>
+          </div>
+          <div class="plugin-row is-update">
+            <span class="row-dot warn" aria-hidden="true"></span>
+            <span class="row-main"><strong>dsh-ops</strong><small>0.4.1 <span aria-hidden="true">→</span> 0.4.2</small></span>
+            <button class="mini solid" type="button">更新</button>
+          </div>
+          <div class="plugin-row">
+            <span class="row-dot ok" aria-hidden="true"></span>
+            <span class="row-main"><strong>dsh-context</strong><small>0.74.0 · 已是最新</small></span>
+            <span class="row-check" aria-hidden="true">✓</span>
+          </div>
+          <div class="plugin-row">
+            <span class="row-dot ok" aria-hidden="true"></span>
+            <span class="row-main"><strong>eac-design-world</strong><small>0.5.0 · 已是最新</small></span>
+            <span class="row-check" aria-hidden="true">✓</span>
+          </div>
+          <div class="panel-footer">
+            <span><span class="row-dot ok" aria-hidden="true"></span> 12:30 已检查 · 不消耗 token</span>
+            <span>重新检查</span>
+          </div>
+        </div>
+        <p class="visual-caption">界面示意 · 实际配色跟随你的 DSH 主题</p>
+      </div>
+    </section>
+
+    <section class="stats" aria-label="项目要点">
+      <div><strong>3</strong><span>层检查：插件 / 桌面端 / 内核</span></div>
+      <div><strong>0</strong><span>token 消耗，无模型调用</span></div>
+      <div><strong>1</strong><span>次点击更新全部插件</span></div>
+      <div><strong>MIT</strong><span>开源许可，可自由修改</span></div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="section-head">
+        <p class="kicker">功能</p>
+        <h2>你需要的，都在一个面板里</h2>
+        <p class="section-lede">不打扰你工作，也不让你在插件页里来回翻找。需要你决定时，它才出现。</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 16 9 5 9-5"></path></svg></span>
+          <h3>三层检查</h3>
+          <p>插件读 profile 与 bundle 列表；桌面端走官方版本服务；内核显示随桌面端内置的版本。</p>
+        </article>
+        <article class="feature">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9"></path><path d="M10 18V5"></path><path d="M16 18v-7"></path><path d="M22 18V3"></path></svg></span>
+          <h3>实时进度</h3>
+          <p>进度条、当前阶段和 pnpm 输出末行。即使内核不转发事件，阶段计时也会兜底推进。</p>
+        </article>
+        <article class="feature">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-9 12h7l-1 8 9-12h-7l1-8Z"></path></svg></span>
+          <h3>一键全部更新</h3>
+          <p>按顺序更新所有待更新插件，逐行显示进度；某个失败时保留错误，其余继续。</p>
+        </article>
+        <article class="feature">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 3 3 5-6"></path></svg></span>
+          <h3>完成即消失</h3>
+          <p>更新成功的插件立即从列表移除，不再闪回“更新”按钮，也不会催你重复检查。</p>
+        </article>
+        <article class="feature">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4v7h-7"></path></svg></span>
+          <h3>需要时重启</h3>
+          <p>替换插件后 DSH 需要重启才能加载新代码；面板检测到后会直接给你「立即重启 DSH」。</p>
+        </article>
+        <article class="feature">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h14M5 15h14"></path><path d="m9 5-4 4 4 4"></path><path d="m15 11 4 4-4 4"></path></svg></span>
+          <h3>可拖动，不挡路</h3>
+          <p>拖标题栏移动、双击复位、记住位置、Esc 关闭。它不会压住你的输入框。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section split" id="how">
+      <div>
+        <p class="kicker">怎么工作</p>
+        <h2>打开 DSH，剩下的交给它</h2>
+        <p class="section-lede">检查是普通 HTTPS 请求；更新调用 DSH 自己的插件管理器。没有隐藏的模型调用。</p>
+        <ol class="steps">
+          <li><span>01</span><div><strong>启动时静默检查</strong><p>读取你的 profile 与已安装版本，对比 npm registry 和桌面端版本服务。</p></div></li>
+          <li><span>02</span><div><strong>有更新才提醒</strong><p>侧边栏出现数量徽标；点开面板，看到每一层的当前版本与最新版本。</p></div></li>
+          <li><span>03</span><div><strong>更新，必要时重启</strong><p>单个或全部更新；失败自动恢复旧版本。需要重启时一键完成。</p></div></li>
+        </ol>
+      </div>
+      <div class="code-card">
+        <div class="code-head"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span>profile 配置示例</span></div>
+        <pre><code><span class="c"># cordis.patch.yml</span>
+- id: plugin-updater
+  name: dsh-plugin-updater
+  config:
+    <span class="k">autoCheck</span>: <span class="v">true</span>
+    <span class="k">checkDesktop</span>: <span class="v">true</span>
+    <span class="k">checkEngine</span>: <span class="v">true</span>
+    <span class="k">registry</span>: <span class="s">https://registry.npmjs.org</span></code></pre>
+        <p class="code-note">改完重启 DSH Desktop 生效。完整配置见 README。</p>
+      </div>
+    </section>
+
+    <section class="section" id="interface">
+      <div class="section-head">
+        <p class="kicker">界面</p>
+        <h2>所有状态，一眼看清</h2>
+        <p class="section-lede">待更新、进行中、已完成、需要重启——不用打开插件页，也不用猜。</p>
+      </div>
+      <div class="interface-grid">
+        <div class="panel large" aria-hidden="true">
+          <div class="panel-titlebar">
+            <span class="panel-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"></path><path d="m8 8 4-4 4 4"></path><path d="M5 15a7 7 0 0 0 14 0"></path></svg></span>
+            <span class="panel-heading"><strong>更新检查</strong><small>拖动标题栏移动</small></span>
+            <span class="panel-grip">•••</span>
+          </div>
+          <div class="panel-warning"><strong>有 5 个插件可以更新</strong><span>完成后需要重启 DSH</span><button class="mini solid" type="button">立即重启 DSH</button></div>
+          <div class="panel-section"><span>插件</span><span class="count">5</span><button class="mini" type="button">全部更新 (5)</button></div>
+          <div class="plugin-row is-update"><span class="row-dot warn"></span><span class="row-main"><strong>dsh-ops</strong><small>0.4.1 → 0.4.2</small></span><button class="mini solid" type="button">更新</button></div>
+          <div class="plugin-row is-update"><span class="row-dot warn"></span><span class="row-main"><strong>dsh-context</strong><small>0.73.1 → 0.74.0</small></span><button class="mini solid" type="button">更新</button></div>
+          <div class="plugin-row is-busy"><span class="row-dot brand"></span><span class="row-main"><strong>eac-design-world</strong><small>正在更新…</small></span><span class="row-check brand">•••</span></div>
+          <div class="plugin-row"><span class="row-dot ok"></span><span class="row-main"><strong>dsh-whale-widget</strong><small>0.4.2 · 已是最新</small></span><span class="row-check">✓</span></div>
+          <div class="panel-footer"><span><span class="row-dot ok"></span> 12:30 已检查 · 不消耗 token</span><span>重新检查</span></div>
+        </div>
+        <ul class="interface-notes">
+          <li><strong>状态色</strong><span>黄点待更新、蓝点进行中、绿点已完成；你不需要读日志判断。</span></li>
+          <li><strong>进度区</strong><span>固定在列表上方，滚动插件列表时也能看到当前进度。</span></li>
+          <li><strong>失败可读</strong><span>错误留在对应插件行下方，并标注是否已恢复旧版本。</span></li>
+          <li><strong>重启提醒</strong><span>需要重启时给出明确原因和按钮，不让你去猜。</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="install">
+      <div class="section-head">
+        <p class="kicker">安装</p>
+        <h2>一分钟接入你的 DSH</h2>
+        <p class="section-lede">推荐从 GitHub 安装；想固定版本就用 tag。安装后重启 DSH Desktop。</p>
+      </div>
+      <div class="install-grid">
+        <article class="install-card">
+          <span class="badge">推荐</span>
+          <h3>从 GitHub 安装</h3>
+          <p>在 DSH 的 <strong>设置 → 插件 → 添加插件</strong> 里填：</p>
+          <div class="command small" data-command="github:TT10-24/dsh-plugin-updater">
+            <code>github:TT10-24/dsh-plugin-updater</code>
+            <button class="copy" type="button" data-copy="github:TT10-24/dsh-plugin-updater">复制</button>
+          </div>
+          <p class="or">或者用终端</p>
+          <div class="command small" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater">
+            <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater</code>
+            <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater">复制</button>
+          </div>
+        </article>
+        <article class="install-card">
+          <span class="badge subtle">固定版本</span>
+          <h3>锁在某个 Release</h3>
+          <p>适合想稳定复现的环境。把版本号换成你需要的 tag：</p>
+          <div class="command small" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.1">
+            <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.1</code>
+            <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.1">复制</button>
+          </div>
+          <p class="fine">安装 / 更新后重启 DSH Desktop。插件会出现在侧边栏底部，显示「查看更新」。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="faq">
+      <div class="section-head">
+        <p class="kicker">常见问题</p>
+        <h2>你可能想先知道</h2>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>会消耗 token 吗？</summary>
+          <p>不会。检查只是普通 HTTPS 请求；更新调用 DSH 插件管理器与 pnpm。没有 LLM、没有 agent、没有 subagent。</p>
+        </details>
+        <details>
+          <summary>为什么更新后要重启？</summary>
+          <p>替换已安装插件的代码后，运行中的 DSH 仍持有旧模块；新增组件行也要重启才会进入运行树。面板会在需要时给你重启按钮。</p>
+        </details>
+        <details>
+          <summary>更新失败会怎样？</summary>
+          <p>插件会尝试恢复旧版本，并把原因显示在对应插件行下方。你可以重启后再试，或到插件页手动批准构建脚本。</p>
+        </details>
+        <details>
+          <summary>普通 Web 环境能用吗？</summary>
+          <p>可以检查插件；没有桌面端时，桌面端区域显示“未检测到桌面端”，不会出现桌面端更新按钮。</p>
+        </details>
+        <details>
+          <summary>怎么固定版本或回滚？</summary>
+          <p>安装时用 <code>#v0.3.1</code> 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div>
+        <p class="kicker">准备好了吗</p>
+        <h2>把更新这件事，交给一个安静的面板。</h2>
+        <p>零 token、MIT、可拖动。你只需要在它提醒时做决定。</p>
+      </div>
+      <div class="cta-actions">
+        <a class="button primary" href="#install">开始安装</a>
+        <a class="button" href="https://github.com/TT10-24/dsh-plugin-updater" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <span class="brand-mark small" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"></path><path d="m8 8 4-4 4 4"></path><path d="M5 15a7 7 0 0 0 14 0"></path></svg></span>
+      <span>dsh-plugin-updater</span>
+    </div>
+    <nav aria-label="页脚导航">
+      <a href="https://github.com/TT10-24/dsh-plugin-updater" target="_blank" rel="noreferrer">GitHub</a>
+      <a href="https://github.com/TT10-24/dsh-plugin-updater/releases" target="_blank" rel="noreferrer">Releases</a>
+      <a href="https://github.com/TT10-24/dsh-plugin-updater/issues" target="_blank" rel="noreferrer">Issues</a>
+      <a href="https://github.com/users/TT10-24/projects/3" target="_blank" rel="noreferrer">Roadmap</a>
+    </nav>
+    <p>MIT · 用 <span aria-hidden="true">♥</span> 为 DSH 制作 · <span id="year">2026</span></p>
+  </footer>
+
+  <script src="./main.js" defer></script>
+</body>
+</html>
