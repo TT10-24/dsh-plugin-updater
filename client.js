@@ -30,7 +30,7 @@ window.__ModuleLoader__.load({
     const DETAIL_SLOT = 'plugins.detail.actions'
     const PACKAGE = 'dsh-plugin-updater'
     const POSITION_KEY = 'dsh-plugin-updater:panel-position'
-    const PANEL_WIDTH = 380
+    const PANEL_WIDTH = 408
     const PANEL_MAX_HEIGHT = 620
 
     const ZH = {
@@ -688,6 +688,38 @@ window.__ModuleLoader__.load({
     }
     //#endregion
 
+    /** The gradient tile used by the panel header, sidebar entry and empty state. */
+    function LogoMark({ size = 28 }) {
+      return h(
+        'span',
+        {
+          style: {
+            ...styles.mark,
+            width: `${size}px`,
+            height: `${size}px`,
+            borderRadius: `${Math.max(6, Math.round(size * 0.3))}px`,
+          },
+          'aria-hidden': true,
+        },
+        h(
+          'svg',
+          {
+            viewBox: '0 0 24 24',
+            width: size * 0.58,
+            height: size * 0.58,
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: 2,
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+          },
+          h('path', { d: 'M12 4v9' }),
+          h('path', { d: 'm8 8 4-4 4 4' }),
+          h('path', { d: 'M5 15a7 7 0 0 0 14 0' }),
+        ),
+      )
+    }
+
     function Section({ title, aside, children }) {
       return h(
         'section',
@@ -701,9 +733,11 @@ window.__ModuleLoader__.load({
       const busy = state.busy[entry.name] === true
       const queued = state.batchTotal > 0 && !busy && state.batchName !== entry.name
       const error = state.rowErrors?.[entry.name]
+      const dot = error ? styles.rowDotError : busy ? styles.rowDotBusy : queued ? styles.rowDotQueued : styles.rowDot
       return h(
         'div',
-        { className: 'dsh-updater-row', style: styles.row },
+        { className: 'dsh-updater-row', style: { ...styles.row, ...styles.rowUpdate } },
+        h('span', { className: busy ? 'dsh-updater-dot-live' : undefined, style: dot, 'aria-hidden': true }),
         h(
           'div',
           { style: styles.rowMain },
@@ -721,7 +755,7 @@ window.__ModuleLoader__.load({
           'button',
           {
             type: 'button',
-            style: styles.primarySmall,
+            style: styles.rowCta,
             disabled: busy || queued || state.batchTotal > 0,
             onClick: () => updateOne(entry, t),
           },
@@ -736,7 +770,8 @@ window.__ModuleLoader__.load({
       if (desktop.status === 'update') {
         return h(
           'div',
-          { className: 'dsh-updater-row', style: styles.row },
+          { className: 'dsh-updater-row', style: { ...styles.row, ...styles.rowUpdate } },
+          h('span', { style: styles.rowDot, 'aria-hidden': true }),
           h(
             'div',
             { style: styles.rowMain },
@@ -755,7 +790,7 @@ window.__ModuleLoader__.load({
             'button',
             {
               type: 'button',
-              style: styles.primarySmall,
+              style: styles.rowCta,
               disabled: state.desktopBusy || state.batchTotal > 0,
               onClick: () => updateDesktop(t),
             },
@@ -767,18 +802,26 @@ window.__ModuleLoader__.load({
         return h(
           'div',
           { style: styles.row },
+          h('span', { style: styles.rowDotOk, 'aria-hidden': true }),
           h(
             'div',
             { style: styles.rowMain },
             h('div', { style: styles.rowName }, 'DSH Desktop'),
-            h('div', { style: styles.rowMeta }, h('span', { style: styles.okDot }, '✓'), `${t('desktopCurrent')} · ${desktop.currentVersion ?? '?'}`),
+            h('div', { style: styles.rowMeta }, `${t('desktopCurrent')} · ${desktop.currentVersion ?? '?'}`),
           ),
+          h('span', { style: styles.rowCheck, 'aria-hidden': true }, '✓'),
         )
       }
       return h(
         'div',
-        { style: styles.rowMain },
-        h('div', { style: { ...styles.rowMeta, color: 'var(--dsw-alias-state-error-primary)' } }, `${t('failed')}: ${desktop.reason ?? ''}`),
+        { style: styles.row },
+        h('span', { style: styles.rowDotError, 'aria-hidden': true }),
+        h(
+          'div',
+          { style: styles.rowMain },
+          h('div', { style: styles.rowName }, 'DSH Desktop'),
+          h('div', { style: styles.rowError }, `${t('failed')}: ${desktop.reason ?? ''}`),
+        ),
       )
     }
 
@@ -788,6 +831,7 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         { style: styles.row },
+        h('span', { style: updating ? styles.rowDot : styles.rowDotOk, 'aria-hidden': true }),
         h(
           'div',
           { style: styles.rowMain },
@@ -801,6 +845,7 @@ window.__ModuleLoader__.load({
             h('span', { style: styles.hint }, t('engineBundled')),
           ),
         ),
+        updating ? null : h('span', { style: styles.rowCheck, 'aria-hidden': true }, '✓'),
       )
     }
 
@@ -873,6 +918,23 @@ window.__ModuleLoader__.load({
           .dsh-updater-panel button:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
           .dsh-updater-spin { animation: dsh-updater-spin .9s linear infinite; }
           @keyframes dsh-updater-spin { to { transform: rotate(360deg); } }
+          .dsh-updater-progress-fill { position: relative; overflow: hidden; }
+          .dsh-updater-progress-fill::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent);
+            transform: translateX(-100%);
+            animation: dsh-updater-shimmer 2.2s ease-in-out infinite;
+          }
+          @keyframes dsh-updater-shimmer { to { transform: translateX(100%); } }
+          .dsh-updater-dot-live { animation: dsh-updater-pulse 1.6s ease-in-out infinite; }
+          @keyframes dsh-updater-pulse { 50% { opacity: .45; } }
+          @media (prefers-reduced-motion: reduce) {
+            .dsh-updater-progress-fill::after,
+            .dsh-updater-dot-live,
+            .dsh-updater-spin { animation: none; }
+          }
           .dsh-updater-panel ::-webkit-scrollbar { width: 8px; height: 8px; }
           .dsh-updater-panel ::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l2); border-radius: 8px; }
         `),
@@ -884,18 +946,18 @@ window.__ModuleLoader__.load({
             onDoubleClick: reset,
             title: tr('dragHint'),
           },
-          h('span', { style: styles.grip, 'aria-hidden': true }, '⠿'),
+          h(LogoMark, { size: 28 }),
           h(
             'div',
             { style: styles.titleBlock },
             h(
               'div',
               { style: styles.titleRow },
-              h('span', { style: styles.mark, 'aria-hidden': true }, '⇪'),
               h('strong', { style: styles.title }, tr('title')),
             ),
             h('span', { style: styles.subtitle }, tr('subtitle')),
           ),
+          h('span', { style: styles.grip, 'aria-hidden': true }, '•••'),
           h(
             'button',
             {
@@ -934,7 +996,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { style: styles.progressTrack },
-                h('div', { style: { ...styles.progressFill, width: `${Math.max(4, Math.round(fraction * 100))}%` } }),
+                h('div', { className: 'dsh-updater-progress-fill', style: { ...styles.progressFill, width: `${Math.max(4, Math.round(fraction * 100))}%` } }),
               ),
               state.updateLog ? h('div', { style: styles.progressLog }, state.updateLog) : null,
             )
@@ -961,7 +1023,7 @@ window.__ModuleLoader__.load({
             ? h(
                 'div',
                 { style: styles.empty },
-                checking ? h('span', { className: 'dsh-updater-spin', style: styles.spinner, 'aria-hidden': true }) : h('span', { style: styles.emptyIcon }, '⇪'),
+                checking ? h('span', { className: 'dsh-updater-spin', style: styles.spinner, 'aria-hidden': true }) : h(LogoMark, { size: 36 }),
                 h('span', { style: styles.muted }, state.status === 'failed' ? `${tr('failed')}: ${state.error ?? ''}` : tr('checking')),
                 state.status === 'failed'
                   ? h('button', { type: 'button', style: styles.primarySmall, onClick: () => runCheck(true) }, tr('retry'))
@@ -993,6 +1055,7 @@ window.__ModuleLoader__.load({
           h(
             'span',
             { style: styles.footerMeta },
+            h('span', { style: styles.footerStatusDot, 'aria-hidden': true }),
             report === null ? '' : tr('lastChecked', { time: new Date(report.checkedAt).toLocaleTimeString() }),
             h('span', { style: styles.footerDot }, '·'),
             tr('noTokens'),
@@ -1002,7 +1065,7 @@ window.__ModuleLoader__.load({
             { style: styles.footerActions },
             h(
               'button',
-              { type: 'button', style: styles.ghostSmall, disabled: checking || busyAny, onClick: () => runCheck(true) },
+              { type: 'button', style: styles.footerLink, disabled: checking || busyAny, onClick: () => runCheck(true) },
               checking ? tr('checking') : tr('checkNow'),
             ),
           ),
@@ -1042,7 +1105,7 @@ window.__ModuleLoader__.load({
               if (!open) runCheck(false)
             },
           },
-          h('span', { style: styles.sidebarGlyph, 'aria-hidden': true }, '⇪'),
+          h(LogoMark, { size: 18 }),
           wide ? h('span', { style: styles.sidebarLabel }, tr('open')) : null,
           marker === 'count' ? h('span', { style: styles.badge }, String(count)) : null,
           marker === 'pending' ? h('span', { style: styles.badgePending }, '·') : null,
@@ -1083,10 +1146,11 @@ window.__ModuleLoader__.load({
         flexDirection: 'column',
         pointerEvents: 'auto',
         background: 'var(--dsw-alias-bg-overlay)',
+        backgroundImage: 'radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent), transparent 62%)',
         color: 'var(--dsw-alias-label-primary)',
-        border: '1px solid var(--dsw-alias-border-l1)',
-        borderRadius: '14px',
-        boxShadow: '0 18px 48px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.08)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 72%, transparent)',
+        borderRadius: '16px',
+        boxShadow: '0 28px 80px rgba(0, 0, 0, 0.38), 0 2px 10px rgba(0, 0, 0, 0.16)',
         backdropFilter: 'blur(14px)',
         font: 'inherit',
         fontSize: '13px',
@@ -1097,30 +1161,31 @@ window.__ModuleLoader__.load({
         display: 'flex',
         alignItems: 'center',
         gap: '10px',
-        padding: '11px 12px',
+        padding: '13px 14px',
         borderBottom: '1px solid var(--dsw-alias-border-l1)',
-        background: 'linear-gradient(180deg, var(--dsw-alias-bg-layer-1), transparent)',
+        background: 'var(--dsw-alias-bg-layer-1)',
         touchAction: 'none',
         userSelect: 'none',
       },
-      grip: { color: 'var(--dsw-alias-label-secondary)', fontSize: '13px', letterSpacing: '-2px', lineHeight: 1 },
+      grip: { color: 'var(--dsw-alias-label-secondary)', fontSize: '10px', letterSpacing: '2px', lineHeight: 1, opacity: 0.8, flex: 'none' },
       titleBlock: { display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0, flex: 1 },
       titleRow: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 },
       mark: {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: '20px',
-        height: '20px',
-        borderRadius: '6px',
-        background: 'var(--dsw-alias-brand-primary)',
-        color: 'var(--dsw-alias-bg-base)',
-        fontSize: '12px',
+        width: '28px',
+        height: '28px',
+        borderRadius: '8px',
+        background: 'linear-gradient(135deg, var(--dsw-alias-brand-primary), #8f6bff)',
+        color: '#fff',
+        fontSize: '13px',
         lineHeight: 1,
         flex: 'none',
+        boxShadow: '0 6px 16px color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent)',
       },
-      title: { fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap' },
-      subtitle: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+      title: { fontSize: '13.5px', fontWeight: 650, whiteSpace: 'nowrap' },
+      subtitle: { fontSize: '10.5px', color: 'var(--dsw-alias-label-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
       close: {
         ...buttonBase,
         width: '24px',
@@ -1139,31 +1204,35 @@ window.__ModuleLoader__.load({
       section: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '6px',
-        padding: '10px 12px',
+        gap: '7px',
+        padding: '12px 14px 9px',
         borderBottom: '1px solid var(--dsw-alias-border-l1)',
       },
       sectionHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' },
       sectionActions: { display: 'flex', alignItems: 'center', gap: '6px' },
       sectionTitle: {
-        fontSize: '11px',
-        fontWeight: 600,
-        letterSpacing: '0.04em',
+        fontSize: '10px',
+        fontWeight: 700,
+        letterSpacing: '0.08em',
         textTransform: 'uppercase',
         color: 'var(--dsw-alias-label-secondary)',
       },
       countPill: {
-        fontSize: '11px',
-        padding: '1px 7px',
+        fontSize: '10px',
+        lineHeight: '16px',
+        padding: '0 6px',
         borderRadius: '999px',
-        background: 'var(--dsw-alias-state-warn-primary)',
-        color: 'var(--dsw-alias-bg-base)',
+        background: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 16%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 28%, transparent)',
+        color: 'var(--dsw-alias-state-warn-primary)',
       },
       okPill: {
-        fontSize: '11px',
-        padding: '1px 7px',
+        fontSize: '10px',
+        lineHeight: '16px',
+        padding: '0 6px',
         borderRadius: '999px',
         background: 'var(--dsw-alias-bg-layer-2)',
+        border: '1px solid var(--dsw-alias-border-l1)',
         color: 'var(--dsw-alias-label-secondary)',
       },
       row: {
@@ -1171,39 +1240,84 @@ window.__ModuleLoader__.load({
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '10px',
-        padding: '7px 8px',
-        margin: '0 -8px',
-        borderRadius: '9px',
+        padding: '9px 10px',
+        margin: '0',
+        borderRadius: '10px',
       },
+      rowUpdate: {
+        background: 'var(--dsw-alias-bg-layer-2)',
+        border: '1px solid var(--dsw-alias-border-l1)',
+      },
+      rowDot: {
+        width: '7px',
+        height: '7px',
+        borderRadius: '999px',
+        flex: 'none',
+        background: 'var(--dsw-alias-state-warn-primary)',
+        boxShadow: '0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 18%, transparent)',
+      },
+      rowDotBusy: {
+        width: '7px',
+        height: '7px',
+        borderRadius: '999px',
+        flex: 'none',
+        background: 'var(--dsw-alias-brand-primary)',
+        boxShadow: '0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent)',
+      },
+      rowDotQueued: {
+        width: '7px',
+        height: '7px',
+        borderRadius: '999px',
+        flex: 'none',
+        background: 'var(--dsw-alias-label-secondary)',
+        opacity: 0.45,
+      },
+      rowDotOk: {
+        width: '7px',
+        height: '7px',
+        borderRadius: '999px',
+        flex: 'none',
+        background: 'var(--dsw-alias-state-success-primary)',
+        boxShadow: '0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent)',
+      },
+      rowDotError: {
+        width: '7px',
+        height: '7px',
+        borderRadius: '999px',
+        flex: 'none',
+        background: 'var(--dsw-alias-state-error-primary)',
+        boxShadow: '0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-error-primary) 16%, transparent)',
+      },
+      rowCheck: { flex: 'none', color: 'var(--dsw-alias-state-success-primary)', fontSize: '12px', fontWeight: 700 },
       rowMain: { display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0, flex: 1 },
       rowName: {
         fontSize: '13px',
-        fontWeight: 500,
+        fontWeight: 550,
         color: 'var(--dsw-alias-label-primary)',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
       },
-      rowMeta: { display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', fontSize: '11px', color: 'var(--dsw-alias-label-secondary)' },
+      rowMeta: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', fontSize: '10.5px', color: 'var(--dsw-alias-label-secondary)' },
       rowError: { fontSize: '11px', color: 'var(--dsw-alias-state-error-primary)', wordBreak: 'break-word', lineHeight: 1.45 },
       chip: {
-        padding: '0 6px',
-        borderRadius: '5px',
-        background: 'var(--dsw-alias-bg-layer-2)',
-        border: '1px solid var(--dsw-alias-border-l1)',
+        padding: 0,
+        border: 'none',
+        background: 'transparent',
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: '11px',
-        lineHeight: '17px',
-        color: 'var(--dsw-alias-label-primary)',
+        fontSize: '10.5px',
+        lineHeight: '16px',
+        color: 'var(--dsw-alias-label-secondary)',
       },
       chipAccent: {
-        padding: '0 6px',
-        borderRadius: '5px',
-        background: 'var(--dsw-alias-brand-primary)',
+        padding: 0,
+        border: 'none',
+        background: 'transparent',
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: '11px',
-        lineHeight: '17px',
-        color: 'var(--dsw-alias-bg-base)',
+        fontSize: '10.5px',
+        lineHeight: '16px',
+        color: 'var(--dsw-alias-brand-primary)',
+        fontWeight: 600,
       },
       channelChip: {
         padding: '0 6px',
@@ -1214,8 +1328,8 @@ window.__ModuleLoader__.load({
         lineHeight: '15px',
       },
       okDot: { color: 'var(--dsw-alias-state-success-primary)', fontWeight: 700 },
-      arrow: { color: 'var(--dsw-alias-label-secondary)' },
-      hint: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      arrow: { color: 'var(--dsw-alias-label-secondary)', fontSize: '10px' },
+      hint: { fontSize: '10.5px', color: 'var(--dsw-alias-label-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
       muted: { fontSize: '12px', color: 'var(--dsw-alias-label-secondary)', wordBreak: 'break-word', lineHeight: 1.5 },
       message: {
         margin: '0 12px 10px',
@@ -1227,11 +1341,11 @@ window.__ModuleLoader__.load({
         lineHeight: 1.5,
       },
       statusBanner: {
-        padding: '8px 12px',
+        padding: '9px 14px',
         borderBottom: '1px solid var(--dsw-alias-border-l1)',
         background: 'var(--dsw-alias-bg-layer-2)',
         color: 'var(--dsw-alias-label-secondary)',
-        fontSize: '12px',
+        fontSize: '11.5px',
         lineHeight: 1.5,
         wordBreak: 'break-word',
       },
@@ -1240,20 +1354,20 @@ window.__ModuleLoader__.load({
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '8px',
-        padding: '8px 12px',
+        padding: '10px 14px',
         borderBottom: '1px solid var(--dsw-alias-border-l1)',
         borderLeft: '3px solid var(--dsw-alias-state-warn-primary)',
-        background: 'var(--dsw-alias-bg-layer-2)',
+        background: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, var(--dsw-alias-bg-layer-1))',
         color: 'var(--dsw-alias-label-primary)',
-        fontSize: '12px',
+        fontSize: '11.5px',
         lineHeight: 1.5,
       },
       restartText: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
       progressBlock: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '6px',
-        padding: '9px 12px',
+        gap: '7px',
+        padding: '12px 14px 11px',
         borderBottom: '1px solid var(--dsw-alias-border-l1)',
         background: 'var(--dsw-alias-bg-layer-1)',
       },
@@ -1276,7 +1390,7 @@ window.__ModuleLoader__.load({
       progressFill: {
         height: '100%',
         borderRadius: '999px',
-        background: 'var(--dsw-alias-brand-primary)',
+        background: 'linear-gradient(90deg, var(--dsw-alias-brand-primary), #8f6bff)',
         transition: 'width .25s ease',
       },
       progressLog: {
@@ -1302,29 +1416,57 @@ window.__ModuleLoader__.load({
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '8px',
-        padding: '9px 12px',
+        padding: '10px 14px',
         borderTop: '1px solid var(--dsw-alias-border-l1)',
         background: 'var(--dsw-alias-bg-layer-1)',
       },
-      footerMeta: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--dsw-alias-label-secondary)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+      footerMeta: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', color: 'var(--dsw-alias-label-secondary)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+      footerStatusDot: {
+        width: '5px',
+        height: '5px',
+        borderRadius: '999px',
+        flex: 'none',
+        background: 'var(--dsw-alias-state-success-primary)',
+        boxShadow: '0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent)',
+      },
       footerDot: { opacity: 0.6 },
       footerActions: { display: 'flex', alignItems: 'center', gap: '6px', flex: 'none' },
       primarySmall: {
         ...buttonBase,
+        padding: '5px 11px',
+        fontSize: '11px',
+        fontWeight: 600,
+        borderRadius: '7px',
+        background: 'linear-gradient(135deg, var(--dsw-alias-brand-primary), #8f6bff)',
+        borderColor: 'transparent',
+        color: '#fff',
+        boxShadow: '0 6px 14px color-mix(in srgb, var(--dsw-alias-brand-primary) 25%, transparent)',
+      },
+      rowCta: {
+        ...buttonBase,
         padding: '4px 10px',
-        fontSize: '11.5px',
-        fontWeight: 500,
-        background: 'var(--dsw-alias-brand-primary)',
-        borderColor: 'var(--dsw-alias-brand-primary)',
-        color: 'var(--dsw-alias-bg-base)',
+        fontSize: '10.5px',
+        fontWeight: 600,
+        borderRadius: '7px',
+        background: 'linear-gradient(135deg, var(--dsw-alias-brand-primary), #8f6bff)',
+        borderColor: 'transparent',
+        color: '#fff',
       },
       ghostSmall: {
         ...buttonBase,
-        padding: '4px 10px',
-        fontSize: '11.5px',
+        padding: '5px 10px',
+        fontSize: '11px',
         background: 'transparent',
         borderColor: 'var(--dsw-alias-border-l1)',
         color: 'var(--dsw-alias-label-primary)',
+      },
+      footerLink: {
+        ...buttonBase,
+        padding: '5px 9px',
+        fontSize: '10.5px',
+        background: 'transparent',
+        borderColor: 'transparent',
+        color: 'var(--dsw-alias-label-secondary)',
       },
       sidebarLayer: { display: 'flex', alignItems: 'center', gap: '6px' },
       sidebarButton: {
