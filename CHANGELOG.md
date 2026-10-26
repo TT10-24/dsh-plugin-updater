@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3
+
+- Fixed the panel turning pale gray under a light DSH theme: it now uses a fixed dark-navy surface, header, row cards, text and borders that match the interface preview.
+- Removed the duplicate “All current” line from the plugin section.
+- Added the dsh-plugin.org listed badge to the README.
+
 ## 0.3.2
 
 - Polished the real panel to match the interface shown on the Pages site: gradient logo tile, header dots, shimmering progress bar, row cards, status dots, cleaner version text and a footer status light.
