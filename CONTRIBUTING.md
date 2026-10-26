@@ -66,4 +66,3 @@ DSH_DESKTOP_RESOURCES="<DSH Desktop>/resources" \
 - [ ] 语法与 `.check/` 检查通过
 - [ ] 中英文字典平衡
 - [ ] 没有提交 token、密码或本机隐私路径
-- [ ] 访问者可见文档使用“你”与访问者对话
