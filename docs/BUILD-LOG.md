@@ -1,6 +1,6 @@
 # 开发历程
 
-这份记录按真实迭代顺序整理，保留遇到的问题、错误判断和最终修复，方便后来者理解“为什么代码长这样”。日期来自开发时的会话记录；仓库里最初的 git 历史是为了公开发布而做的结构化导入，不是当年逐日提交的原始记录。
+这份记录按真实迭代顺序整理，保留遇到的问题、错误判断和最终修复，帮助你能理解“为什么代码长这样”。日期来自开发时的会话记录；仓库里最初的 git 历史是为了公开发布而做的结构化导入，不是当年逐日提交的原始记录。
 
 ## 2026-10-15 · 0.1.0 第一版
 
@@ -69,11 +69,22 @@
 - **发布整理**：版本 0.3.0、MIT、README/CHANGELOG/icon、`files` 白名单、移除 `private`；`protocol.js` 只依赖 Cordis，Remote 绑定内联，降低 GitHub 安装的解析依赖。
 - 加入 CI：语法、JSON、locale 平衡、无头渲染、拖动检查。
 
+## 2026-10-26 · 0.3.1 仓库完善与 Pages
+
+目标：把仓库从“能安装”完善成“第一次发现它的人也能看懂、能参与”。
+
+- 用 5 个 Issue 和 Projects #3 看板规划：文档重写、Pages 介绍页、Actions 部署、Issue/PR 模板、维护者笔记移出仓库。
+- 从 `main` 切出 `feat/repo-polish-and-pages`，所有改动通过 PR 合并；PR 描述用 `Closes #1` 等关联议题。
+- 新增 `site/` 静态介绍页和 `.github/workflows/pages.yml`，由 Actions 部署到 GitHub Pages。
+- README、ARCHITECTURE、BUILD-LOG、CONTRIBUTING 统一用“你”与访问者对话；新增界面示意 SVG、FAQ、路线图链接。
+- 维护者的新手指南已移到仓库外的本地 `.local/OWNER-GUIDE.md`（`.local/` 被 `.gitignore` 忽略），仓库只保留面向访问者的文档。
+- 新增 Issue 模板、PR 模板和 `SECURITY.md`，降低反馈与贡献门槛。
+
 ## 经验总结
 
 1. Cordis 里访问服务要么 `inject`，要么 `ctx.get()`；直接点属性会抛错。
 2. React 里 ref 必须真的挂到元素上；拖动要同步监听并直接移动节点。
 3. DSH 的 `installBundle` 是“新增”语义，更新要走 remove + install。
 4. 替换已安装插件的代码/新增组件行后，重启是必需的。
-5. 更新失败要恢复旧版本并把原因显示在用户能看到的地方。
+5. 更新失败要恢复旧版本并把原因显示在你能看到的地方。
 6. 进度事件是“锦上添花”，本地阶段兜底能让进度条永远可用。

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- Added a GitHub Pages landing page (`site/`) deployed by `.github/workflows/pages.yml`.
+- Rewrote README, architecture notes and the build log to address you, the visitor, directly; added FAQ, an interface illustration and roadmap links.
+- Added issue forms, a pull-request template and a security policy so you can report problems and contribute.
+- Moved owner-only beginner notes out of the repository into an ignored `.local/` folder.
+- Updated package homepage to the Pages site and included docs assets in the npm package.
+
 ## 0.3.0
 
 - Updated plugin rows disappear **immediately** after a successful update; no more flashing back to the Update button before the re-check lands.

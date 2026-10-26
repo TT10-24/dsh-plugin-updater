@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 在线介绍页
+    url: https://tt10-24.github.io/dsh-plugin-updater/
+    about: 先看功能、安装步骤和常见问题，也许这里已经有答案。
+  - name: 安全漏洞
+    url: https://github.com/TT10-24/dsh-plugin-updater/security/advisories/new
+    about: 请通过 Security Advisories 私密报告，不要公开贴 token 或利用细节。

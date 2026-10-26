@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 470" width="760" height="470" role="img" aria-label="dsh-plugin-updater 面板界面示意">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0d12"/>
+      <stop offset="1" stop-color="#151a26"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6b8cff"/>
+      <stop offset="1" stop-color="#8f6bff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <style>
+      .title { font: 600 15px -apple-system, "Segoe UI", sans-serif; fill: #eef2f9; }
+      .sub { font: 11px -apple-system, "Segoe UI", sans-serif; fill: #9aa5b8; }
+      .section { font: 600 10px -apple-system, "Segoe UI", sans-serif; letter-spacing: 1.4px; fill: #7f8ba1; }
+      .name { font: 500 13px -apple-system, "Segoe UI", sans-serif; fill: #eef2f9; }
+      .meta { font: 11px ui-monospace, "SFMono-Regular", Consolas, monospace; fill: #9aa5b8; }
+      .btn { font: 600 11px -apple-system, "Segoe UI", sans-serif; fill: #0c1020; }
+      .ghost { font: 600 11px -apple-system, "Segoe UI", sans-serif; fill: #cdd6e6; }
+      .tiny { font: 10px -apple-system, "Segoe UI", sans-serif; fill: #7f8ba1; }
+      .mono { font: 11px ui-monospace, "SFMono-Regular", Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect width="760" height="470" fill="url(#bg)"/>
+  <circle cx="676" cy="72" r="120" fill="#6b8cff" opacity="0.10"/>
+  <circle cx="92" cy="420" r="150" fill="#8f6bff" opacity="0.08"/>
+
+  <g filter="url(#shadow)">
+    <rect x="150" y="38" width="460" height="392" rx="16" fill="#171b24" stroke="#2a3140"/>
+    <rect x="150" y="38" width="460" height="52" rx="16" fill="#1b202b"/>
+    <rect x="150" y="74" width="460" height="16" fill="#1b202b"/>
+
+    <g transform="translate(172,64)">
+      <rect x="0" y="0" width="22" height="22" rx="6" fill="url(#brand)"/>
+      <path d="M11 5v8" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+      <path d="M7.5 8.2 11 4.7l3.5 3.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M4.8 13.2a6.2 6.2 0 0 0 12.4 0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+      <text x="30" y="15" class="title">更新检查</text>
+    </g>
+    <g transform="translate(518,64)">
+      <rect x="0" y="0" width="52" height="24" rx="12" fill="#2a3140"/>
+      <text x="9" y="16" class="tiny">拖动</text>
+      <circle cx="34" cy="12" r="1.6" fill="#7f8ba1"/>
+      <circle cx="39" cy="12" r="1.6" fill="#7f8ba1"/>
+      <circle cx="44" cy="12" r="1.6" fill="#7f8ba1"/>
+    </g>
+
+    <!-- progress -->
+    <g transform="translate(170,108)">
+      <text x="0" y="10" class="name">正在更新 dsh-ops</text>
+      <text x="352" y="10" text-anchor="end" class="meta">68%</text>
+      <rect x="0" y="20" width="352" height="7" rx="3.5" fill="#252c3a"/>
+      <rect x="0" y="20" width="239" height="7" rx="3.5" fill="url(#brand)"/>
+      <text x="0" y="42" class="tiny">安装新版本 · 正在下载依赖…</text>
+    </g>
+
+    <line x1="170" y1="164" x2="590" y2="164" stroke="#252c3a"/>
+
+    <!-- section -->
+    <g transform="translate(170,182)">
+      <text x="0" y="10" class="section">插件</text>
+      <rect x="43" y="-2" width="20" height="18" rx="9" fill="#3b2b18"/>
+      <text x="49" y="11" class="tiny" fill="#f5b544">3</text>
+      <rect x="278" y="-4" width="74" height="22" rx="6" fill="#6b8cff"/>
+      <text x="289" y="11" class="btn">全部更新</text>
+    </g>
+
+    <!-- rows -->
+    <g transform="translate(170,206)">
+      <!-- row 1 -->
+      <rect x="-8" y="0" width="386" height="50" rx="10" fill="#1d2330"/>
+      <circle cx="12" cy="25" r="4" fill="#f5b544"/>
+      <text x="26" y="21" class="name">dsh-ops</text>
+      <text x="26" y="38" class="meta">0.4.1  →  0.4.2</text>
+      <rect x="310" y="13" width="56" height="24" rx="6" fill="url(#brand)"/>
+      <text x="324" y="29" class="btn">更新</text>
+
+      <!-- row 2 -->
+      <rect x="-8" y="58" width="386" height="50" rx="10" fill="#1a1f2a"/>
+      <circle cx="12" cy="83" r="4" fill="#3ecf8e"/>
+      <text x="26" y="79" class="name">dsh-context</text>
+      <text x="26" y="96" class="meta">0.74.0 · 已是最新</text>
+      <text x="342" y="88" class="ghost" fill="#3ecf8e">✓</text>
+
+      <!-- row 3 -->
+      <rect x="-8" y="116" width="386" height="50" rx="10" fill="#1a1f2a"/>
+      <circle cx="12" cy="141" r="4" fill="#3ecf8e"/>
+      <text x="26" y="137" class="name">eac-design-world</text>
+      <text x="26" y="154" class="meta">0.5.0 · 已是最新</text>
+      <text x="342" y="146" class="ghost" fill="#3ecf8e">✓</text>
+    </g>
+
+    <line x1="170" y1="382" x2="590" y2="382" stroke="#252c3a"/>
+    <g transform="translate(170,394)">
+      <circle cx="4" cy="8" r="3" fill="#3ecf8e"/>
+      <text x="14" y="12" class="tiny">12:30 已检查 · 不消耗 token</text>
+      <text x="352" y="12" text-anchor="end" class="tiny">重新检查</text>
+    </g>
+  </g>
+
+  <text x="380" y="454" text-anchor="middle" class="tiny" fill="#596275">界面示意 · 实际样式随 DSH 主题变化</text>
+</svg>

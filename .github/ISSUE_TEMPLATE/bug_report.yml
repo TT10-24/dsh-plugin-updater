@@ -1,0 +1,80 @@
+name: Bug 报告
+description: 告诉作者哪里不对，帮助一起修好它
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你花时间报告问题。请尽量填完整，尤其是 DSH 版本、复现步骤和日志；不要粘贴 token 或隐私内容。
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH Desktop 版本
+      placeholder: "例如 2.0.18"
+    validations:
+      required: true
+  - type: input
+    id: core-version
+    attributes:
+      label: dsh 内核版本
+      placeholder: "例如 0.2.1-rc.2"
+    validations:
+      required: true
+  - type: input
+    id: updater-version
+    attributes:
+      label: dsh-plugin-updater 版本
+      placeholder: "例如 0.3.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开 DSH 开始，一步步写清楚你做了什么。
+      placeholder: |
+        1. 打开 DSH Desktop
+        2. 点击侧边栏「查看更新」
+        3. 点击「全部更新」
+        4. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你期望发生什么
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际发生了什么
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志（可选）
+      description: 请去掉 token、用户名、私有路径等敏感信息。
+      render: shell
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 确认
+      options:
+        - label: 我已经搜索过已有 Issue，没有发现重复。
+          required: true
+        - label: 我使用的是最新版本，并且重启过 DSH Desktop。
+          required: true
