@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-updater",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Startup update checks for installed DSH plugins, DSH Desktop and the core, with a draggable panel, live progress and one-click updates — no agent calls, no token spend.",
   "license": "MIT",
   "author": "TT10-24 (https://github.com/TT10-24)",

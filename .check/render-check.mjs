@@ -126,6 +126,16 @@ const ALLOWED_DOM_PROPS = new Set([
   'aria-expanded',
   'aria-labelledby',
   'sec-fetch-site',
+  'viewBox',
+  'width',
+  'height',
+  'fill',
+  'stroke',
+  'strokeWidth',
+  'strokeLinecap',
+  'strokeLinejoin',
+  'd',
+  'xmlns',
 ])
 const ALLOWED_STYLE = /^[a-zA-Z][a-zA-Z0-9]*$/
 

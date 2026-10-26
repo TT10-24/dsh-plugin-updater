@@ -49,7 +49,7 @@ dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater
 固定到某个版本：
 
 ```bash
-dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.1
+dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.2
 ```
 
 安装完成后重启 DSH Desktop。插件会出现在侧边栏底部（设置按钮旁），显示「查看更新」。
@@ -118,7 +118,7 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 
 **怎么固定版本或回滚？**
 
-安装时用 `#v0.3.1` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。
+安装时用 `#v0.3.2` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。
 
 ## 兼容性与限制
 
@@ -138,7 +138,7 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 ## 项目文档
 
 - [架构说明](docs/ARCHITECTURE.md)：Host/Client 分工、三层检查、更新与进度事件。
-- [开发历程](docs/BUILD-LOG.md)：从 0.1.0 到 0.3.1 的真实问题与修复记录。
+- [开发历程](docs/BUILD-LOG.md)：从 0.1.0 到 0.3.2 的真实问题与修复记录。
 - [贡献指南](CONTRIBUTING.md)：本地开发、检查与 PR 约定。
 - [路线图](https://github.com/users/TT10-24/projects/3)：正在做和接下来要做的事。
 
