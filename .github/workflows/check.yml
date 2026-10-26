@@ -1,0 +1,39 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Syntax
+        run: |
+          node --check index.js
+          node --check client.js
+          node --check protocol.js
+
+      - name: Manifest and dictionaries
+        run: |
+          node -e "for (const file of ['package.json','locale/zh.json','locale/en.json']) JSON.parse(require('fs').readFileSync(file,'utf8')); console.log('json ok')"
+          node .check/locale-check.mjs ./client.js
+
+      - name: Client render and drag
+        run: |
+          node .check/render-check.mjs ./client.js
+          node .check/drag-check.mjs ./client.js
+
+      - name: Package contents
+        run: npm pack --dry-run
