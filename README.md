@@ -12,7 +12,6 @@
 
 ![dsh-plugin-updater 面板界面示意](docs/assets/panel-preview.svg)
 
-> 上图是界面示意，实际配色会跟随你的 DSH 主题变化。
 
 ---
 
