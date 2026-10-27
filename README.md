@@ -48,7 +48,7 @@ dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater
 固定到某个版本：
 
 ```bash
-dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.3
+dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4
 ```
 
 安装完成后重启 DSH Desktop。插件会出现在侧边栏底部（设置按钮旁），显示「查看更新」。
@@ -93,6 +93,36 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 
 修改后重启 DSH Desktop 生效。
 
+## 桌面端升级与 DSH NEXT
+
+从 2.0.20 起，稳定通道可能把 **DSH NEXT** 作为桌面端升级包下发。DSH NEXT 是独立产品：安装器、可执行文件和默认数据目录（`~/.dsh`）都和 DSH Desktop 不同。直接更新会打开一个空工作区，看起来像“工作区、对话和插件都没了”；数据其实还在原来的 DSH 数据目录里。
+
+0.3.4 起，这种升级不再走普通的「更新桌面端」：
+
+1. 面板会显示 **DSH Desktop → DSH NEXT** 迁移卡片，并标出当前数据目录。
+2. 点 **保留数据并更新**：插件先把 DSH NEXT 的数据目录指针写到当前 DSH 数据目录（例如 `F:\DSH-Home`），备份原指针，再把更新交给桌面端官方安装流程。
+3. 如果已经装了 DSH NEXT、但它的数据目录没有对齐，面板会出现 **修复数据目录**，一键改回。
+
+手动恢复的两种方式：
+
+- 打开 DSH NEXT → 设置 → 数据目录 → 选择原来的 DSH 数据目录；
+- 或运行 `<DSH_HOME>\plugin-updater\restore-desktop-data.ps1`。
+
+数据目录与安装目录是两回事：换安装位置、重装桌面端都不会删除 `F:\DSH-Home` 这类数据目录。升级前仍建议保留一份数据目录备份。
+
+> 桌面端官方更新流程下载的是 one-click 安装包，可能不提供安装位置选择；需要自己选目录时，用官网的 `DSH-NEXT-...-x64-Setup.exe`。装到哪个盘都不影响已经写好的数据目录。
+
+## 忽略某个版本
+
+不想升级 DSH NEXT、插件做了不兼容的大改、或者你更喜欢旧版时，可以只忽略“这一次”的版本：
+
+- 每个可更新插件行都有 **忽略**；桌面端有 **忽略本次**。
+- 只忽略当前最新版本；上游发布更新的版本后会重新提示。
+- 已忽略的版本会留在 **已忽略** 区域，随时可以 **取消忽略**。
+- 记录在 `<DSH_HOME>/plugin-updater/ignored.json`，只在本机，不发送。
+
+插件会把桌面端更新分成 **补丁 / 功能版本 / 大版本 / 产品线切换**。只有产品线切换（例如 DSH Desktop → DSH NEXT）会打开迁移卡片；普通版本更新仍是普通更新行。
+
 ## 常见问题
 
 **会消耗 token 吗？**
@@ -117,7 +147,11 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 
 **怎么固定版本或回滚？**
 
-安装时用 `#v0.3.3` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。
+安装时用 `#v0.3.4` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。
+
+**点了「忽略」之后怎么恢复？**
+
+面板底部的 **已忽略** 区域会保留一条记录，点 **取消忽略** 就会在下次检查时重新提示。忽略只针对那一个版本，不会永久关闭这类更新。
 
 ## 兼容性与限制
 
@@ -126,10 +160,11 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 - **构建脚本**：某些插件需要批准 pnpm 构建脚本；失败时会显示待批准列表。
 - **普通 Web 运行**：没有桌面端路由，桌面端区域只显示状态。
 - **自动适配**：`pluginManager`、`profileContext`、`desktopRuntime` 都是可探测服务；内核缺少某项能力时只降级对应图层，不会让插件卡死。
+- **DSH NEXT 兼容**：DSH NEXT 从 profile 外加载 `link:` 插件时看不到 `@deepseek-ai/cordis`；`protocol.js` 会退回本地 `ctx.provide()` 基类，不再在启动阶段失败。它也不提供 `desktopRuntime`，插件从 `primary-runtime/runtime.json` 读取 `desktopVersion`，桌面端区域不再误报“未检测到”。
 
 ## 隐私与网络
 
-- 读取：你的 profile 的 `package.json`、已安装包的版本号。
+- 读取：你的 profile 的 `package.json`、已安装包的版本号、本机 DSH / DSH NEXT 的数据目录指针，以及 `ignored.json`（都只在本地比较，不发送）。
 - 请求：npm registry（默认 `registry.npmjs.org`）的包版本；DSH Desktop 官方版本服务 `www.dshdesktop.cn`。
 - 不发送：会话内容、提示词、凭据或任何模型请求。
 - 不调用：LLM、agent 工具、subagent。更新由 DSH 插件管理器执行。
@@ -137,7 +172,7 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 ## 项目文档
 
 - [架构说明](docs/ARCHITECTURE.md)：Host/Client 分工、三层检查、更新与进度事件。
-- [开发历程](docs/BUILD-LOG.md)：从 0.1.0 到 0.3.3 的真实问题与修复记录。
+- [开发历程](docs/BUILD-LOG.md)：从 0.1.0 到 0.3.4 的真实问题与修复记录。
 - [贡献指南](CONTRIBUTING.md)：本地开发、检查与 PR 约定。
 - [路线图](https://github.com/users/TT10-24/projects/3)：正在做和接下来要做的事。
 
@@ -156,6 +191,8 @@ node .check/drag-check.mjs ./client.js
 ## English
 
 A zero-token update checker for DSH (DeepSeek Harness). It checks your installed plugins, DSH Desktop and the bundled core on launch, then reminds you with a draggable panel. You can update one plugin, update all of them in one click, and restart when DSH asks for it — no model calls, no token spend.
+
+When the stable channel promotes **DSH NEXT**, the panel treats it as a product-line migration rather than a patch. **Keep data and update** writes the DSH NEXT data-directory pointer to your current DSH home before the shell's installer runs, so the new app opens with the same workspace, conversations and plugins. A repair action covers a NEXT install that was already pointed at its default `~/.dsh` home.
 
 Install:
 

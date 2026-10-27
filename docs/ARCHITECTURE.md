@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `index.js` | DSH Host（Node/Electron 主进程） | 读取 profile、请求 npm/桌面端版本服务、调用插件管理器执行更新 |
 | `client.js` | DSH Web 页面 | 侧边栏入口、可拖动面板、进度条、批量更新、重启按钮 |
-| `protocol.js` | Host | 只从 `@deepseek-ai/cordis` 取 `Service`，作为内核兼容层 |
+| `protocol.js` | Host | 可选地从 `@deepseek-ai/cordis` 取 `Service`；取不到时用本地 `ctx.provide()` 基类 |
 | `cordis.patch.yml` | Host | 把一个 `plugin-updater` 行插入 profile |
 | `locale/*.json` | 插件管理器 | 插件卡片的中英文标题与说明 |
 
@@ -32,11 +32,15 @@
 
 ## Remote 端点
 
-Host 用一个普通 Cordis Service（`pluginUpdater`）暴露三个方法：
+Host 用一个普通 Cordis Service（`pluginUpdater`）暴露这些方法：
 
 - `check(force)`：缓存 5 分钟；`force:true` 强制刷新。
 - `update(name, version, requestId)`：更新一个插件。
 - `status()`：轻量存活信息与 `compat`。
+- `desktopData()`：当前数据目录与 DSH NEXT 指针是否对齐。
+- `prepareDesktopUpdate(preserveHome, targetVersion)`：产品线切换前写入 NEXT 数据目录指针。
+- `repairDesktopData()`：事后修复 NEXT 指针。
+- `ignore(target, version)` / `unignore(target)`：按版本忽略插件或桌面端更新。
 
 Remote 绑定是内联的纯 JSON：
 
@@ -69,18 +73,42 @@ Host 把客户端生成的 `requestId` 传给 `installBundle`。管理器的 `ru
 
 更新成功后，客户端不等重新检查，先把该行在本地报告里改成 `current` 并移出列表（`markUpdated`），再在后台 `check(true)` 校正。因此不会出现“更新按钮闪回一下才消失”。
 
+## 忽略与版本隔离
+
+每个可更新行有一个版本级开关，不是永久静音：
+
+- Host 把 `{ packages: { <name>: <version> }, desktop: <version> }` 写到 `<DSH_HOME>/plugin-updater/ignored.json`。
+- `check` 时只把“忽略版本 === 最新版本”的条目标成 `ignored`；上游发新版本后会自动恢复为可更新。
+- `updates` 与徽标计数只统计 `hasUpdate`，所以忽略不会让角标一直亮。
+- 面板保留一个“已忽略”区域，`unignore` 后下一次检查立即重新提示。
+
 ## 兼容性策略
 
 - `pluginManager`、`profileContext`、`desktopRuntime` 全部用 `ctx.get()` 探测，缺失只降级对应图层。
-- 版本来源多级回退：运行时服务 → 打包 manifest → 环境变量。
+- 版本来源多级回退：`desktopRuntime` → DSH NEXT 的 `runtime.json`（`desktopVersion`）→ 打包 manifest → 环境变量。DSH NEXT 不提供 `desktopRuntime`，但 `primary-runtime/runtime.json` 记录了桌面版本。
 - 外部响应宽容解析（`version` / `latestVersion` / 裸版本字符串）。
-- `protocol.js` 只依赖 `@deepseek-ai/cordis`，并对 `default.Service` 兜底。
+- `protocol.js` 优先使用 `@deepseek-ai/cordis` 的 `Service`；DSH NEXT 从 profile 外加载 `link:` 插件时看不到这个包，于是退回本地 `ctx.provide()` 基类，不再让整个插件在 import 阶段失败。
 
 ## 安全与 token
 
 - 检查只发普通 HTTPS GET：npm registry 与 `www.dshdesktop.cn`。
 - 更新调用 DSH 自己的插件管理器 / pnpm；不调用 LLM、agent 工具或 subagent。
 - 不读取会话内容、提示词或凭据；只读 profile 的 `package.json` 与已安装包版本。
+
+## 桌面端产品线迁移（DSH NEXT）
+
+桌面端在 stable 通道可能返回 `2.0.20-next`。桌面端自己的 `parseCanonicalUpdateVersion` 允许这种“stable 提升到 Next 安装器”的行为，但 DSH NEXT 的默认数据目录是 `~/.dsh`，并且只读取自己的位置文件：
+
+`%APPDATA%\DSH NEXT\home\desktop-next-location.json`
+
+如果不管它，新版本会以一个空 home 启动，看起来像工作区、对话和插件全没了。插件把这种更新识别为产品线切换：
+
+1. `checkDesktopUpdate` 用 `releaseLine()` / `releaseKind()` 比较当前/最新版本；目标是 `-next` 且当前不是 next 时，返回 `migration` 与 `requiresConfirmation`。普通补丁、功能版本、大版本仍走普通更新行。
+2. 客户端迁移卡片先调用 `pluginUpdater/prepareDesktopUpdate`。Host 备份旧的位置文件，写入 `desktop-next-location.json` 和 `desktop-next-last-home.json`，并在 `<DSH_HOME>/plugin-updater/` 留下 `desktop-handoff.json` 和 `restore-desktop-data.ps1`。
+3. 只有写入成功，客户端才 POST `/api/desktop/updates/check`；下载、签名、安装仍由桌面端官方流程负责。
+4. `pluginUpdater/desktopData` 报告指针是否对齐；`repairDesktopData` 用于已经装好 NEXT 之后的一键修复。
+
+安装位置与数据目录互相独立：安装器换到哪个盘，都不会移动 `DSH_HOME`。
 
 ## 已知限制
 

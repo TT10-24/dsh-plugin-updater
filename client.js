@@ -54,6 +54,35 @@ window.__ModuleLoader__.load({
       desktopFailed: '无法启动桌面端更新',
       desktopHint: '由桌面端原生流程下载安装',
       channel: '通道 {channel}',
+      migrationTitle: 'DSH Desktop → DSH NEXT',
+      migrationBody: '这是独立的 DSH NEXT 产品线：默认数据目录与安装目录都不同。直接更新会让新版本打开一个空工作区。',
+      migrationPreserve: '更新前会把数据目录指针写入 DSH NEXT：{home}（原指针会先备份）。',
+      migrationNoHome: '无法确定当前 DSH 数据目录，已停止自动迁移。请先在 DSH 中确认数据目录。',
+      migrationUpdate: '保留数据并更新',
+      migrationSkip: '仍然直接更新',
+      migrationPreparing: '正在写入 DSH NEXT 数据目录指针…',
+      migrationPreserved: '数据目录已指向 {home}，继续交给桌面端安装',
+      migrationFailed: '迁移准备失败，未启动更新',
+      migrationInstallerHint: '桌面端会下载官方安装包；安装位置不影响数据目录。',
+      dataTitle: 'DSH NEXT 数据目录未对齐',
+      dataBody: 'DSH NEXT 现在没有使用 {home}，打开后看不到原有工作区。',
+      dataRepair: '修复数据目录',
+      dataRepairing: '正在修复…',
+      dataRepaired: '已指向 {home}，重启 DSH NEXT 后生效',
+      dataFailed: '修复数据目录失败',
+      migrationExisting: 'DSH NEXT 现有数据目录：{pointer}；本次会改为 {home}（原指针会先备份）。',
+      kindProduct: '产品线切换',
+      kindMajor: '大版本',
+      kindMinor: '功能版本',
+      kindPatch: '补丁',
+      ignoredTitle: '已忽略',
+      ignoredRow: '已忽略 {version}',
+      ignore: '忽略',
+      ignoreFailed: '忽略失败',
+      unignore: '取消忽略',
+      ignoredRestored: '已取消忽略',
+      desktopIgnore: '忽略本次',
+      desktopIgnored: '已忽略此次更新',
       engineTitle: '内核',
       engineBundled: '随桌面端更新',
       latest: '最新',
@@ -107,6 +136,35 @@ window.__ModuleLoader__.load({
       desktopFailed: 'Could not start the Desktop update',
       desktopHint: "Desktop's own installer flow",
       channel: 'channel {channel}',
+      migrationTitle: 'DSH Desktop → DSH NEXT',
+      migrationBody: 'DSH NEXT is a separate product line with its own default data directory and installer. Updating directly opens it with an empty workspace.',
+      migrationPreserve: 'The update will point DSH NEXT at {home} first (the previous pointer is backed up).',
+      migrationNoHome: 'The current DSH data directory could not be resolved, so the automatic handoff was stopped.',
+      migrationUpdate: 'Keep data and update',
+      migrationSkip: 'Update directly anyway',
+      migrationPreparing: 'Writing the DSH NEXT data-directory pointer…',
+      migrationPreserved: 'Data directory points at {home}; continuing with the Desktop installer',
+      migrationFailed: 'Migration preflight failed; the update was not started',
+      migrationInstallerHint: 'The Desktop downloads the official installer; its install location does not change the data directory.',
+      dataTitle: 'DSH NEXT data directory is out of sync',
+      dataBody: 'DSH NEXT is not using {home}, so its workspace would look empty.',
+      dataRepair: 'Repair data directory',
+      dataRepairing: 'Repairing…',
+      dataRepaired: 'Now points at {home}; restart DSH NEXT to apply',
+      dataFailed: 'Could not repair the data directory',
+      migrationExisting: 'DSH NEXT currently uses {pointer}; this update will point it at {home} (the old pointer is backed up).',
+      kindProduct: 'Product line',
+      kindMajor: 'Major',
+      kindMinor: 'Feature',
+      kindPatch: 'Patch',
+      ignoredTitle: 'Ignored',
+      ignoredRow: 'Ignored {version}',
+      ignore: 'Ignore',
+      ignoreFailed: 'Could not ignore this version',
+      unignore: 'Unignore',
+      ignoredRestored: 'Unignored',
+      desktopIgnore: 'Ignore this one',
+      desktopIgnored: 'This update is ignored',
       engineTitle: 'Core',
       engineBundled: 'ships with Desktop',
       latest: 'latest',
@@ -298,6 +356,14 @@ window.__ModuleLoader__.load({
 
     function desktopNeedsUpdate(report) {
       return report?.desktop?.status === 'update'
+    }
+
+    function desktopKindLabel(kind, t) {
+      if (kind === 'product-line') return t('kindProduct')
+      if (kind === 'major') return t('kindMajor')
+      if (kind === 'minor') return t('kindMinor')
+      if (kind === 'patch') return t('kindPatch')
+      return null
     }
 
     function totalUpdates(report) {
@@ -539,6 +605,115 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * Write the successor product's data-directory pointer before handing a
+     * product-line change to the shell. The Host performs the write; this
+     * function only decides when it is safe to continue.
+     */
+    async function migrateDesktop(t, desktop) {
+      const plan = desktop?.migration
+      if (plan === null || plan === undefined) {
+        await updateDesktop(t)
+        return
+      }
+      store.set({ desktopBusy: true, message: t('migrationPreparing') })
+      try {
+        const prepared = await callHost('prepareDesktopUpdate', {
+          preserveHome: true,
+          targetVersion: desktop.latestVersion ?? plan.targetVersion ?? null,
+        })
+        if (prepared?.ok === false) throw new Error(prepared.error ?? 'the data directory could not be prepared')
+        store.set({ message: t('migrationPreserved', { home: prepared?.home ?? plan.home ?? '' }) })
+        await updateDesktop(t)
+      } catch (error) {
+        store.set({ message: `${t('migrationFailed')}: ${error instanceof Error ? error.message : String(error)}`, desktopBusy: false })
+      }
+    }
+
+    /** Repair a DSH NEXT pointer that was left on the default `~/.dsh` home. */
+    async function repairDesktop(t) {
+      store.set({ desktopBusy: true, message: t('dataRepairing') })
+      try {
+        const result = await callHost('repairDesktopData', {})
+        if (result?.ok === false) throw new Error(result.error ?? 'the data directory could not be repaired')
+        store.set({ message: t('dataRepaired', { home: result?.home ?? '' }) })
+        await runCheck(true)
+      } catch (error) {
+        store.set({ message: `${t('dataFailed')}: ${error instanceof Error ? error.message : String(error)}` })
+      } finally {
+        store.set({ desktopBusy: false })
+      }
+    }
+
+
+    /** Pin one plugin version as ignored; a newer release appears again. */
+    async function ignorePlugin(entry, t) {
+      store.set({ busy: { ...store.state.busy, [entry.name]: true } })
+      try {
+        const result = await callHost('ignore', { target: entry.name, version: entry.latestVersion })
+        if (result?.ok === false) throw new Error(result.error ?? 'the version could not be ignored')
+        clearRowError(entry.name)
+        store.set({ message: t('ignoredRow', { version: entry.latestVersion ?? '' }) })
+        await runCheck(true)
+      } catch (error) {
+        const message = `${t('ignoreFailed')}: ${error instanceof Error ? error.message : String(error)}`
+        setRowError(entry.name, message)
+        store.set({ message })
+      } finally {
+        const busy = { ...store.state.busy }
+        delete busy[entry.name]
+        store.set({ busy })
+      }
+    }
+
+    /** Restore an ignored plugin so its current release can be offered again. */
+    async function unignorePlugin(entry, t) {
+      store.set({ busy: { ...store.state.busy, [entry.name]: true } })
+      try {
+        const result = await callHost('unignore', { target: entry.name })
+        if (result?.ok === false) throw new Error(result.error ?? 'the ignore entry could not be removed')
+        store.set({ message: t('ignoredRestored') })
+        await runCheck(true)
+      } catch (error) {
+        const message = `${t('ignoreFailed')}: ${error instanceof Error ? error.message : String(error)}`
+        setRowError(entry.name, message)
+        store.set({ message })
+      } finally {
+        const busy = { ...store.state.busy }
+        delete busy[entry.name]
+        store.set({ busy })
+      }
+    }
+
+    /** Pin this Desktop release as ignored; it stays visible with an undo action. */
+    async function ignoreDesktopUpdate(desktop, t) {
+      store.set({ desktopBusy: true })
+      try {
+        const result = await callHost('ignore', { target: 'desktop', version: desktop.latestVersion })
+        if (result?.ok === false) throw new Error(result.error ?? 'the version could not be ignored')
+        store.set({ message: t('ignoredRow', { version: desktop.latestVersion ?? '' }) })
+        await runCheck(true)
+      } catch (error) {
+        store.set({ message: `${t('ignoreFailed')}: ${error instanceof Error ? error.message : String(error)}` })
+      } finally {
+        store.set({ desktopBusy: false })
+      }
+    }
+
+    async function unignoreDesktopUpdate(t) {
+      store.set({ desktopBusy: true })
+      try {
+        const result = await callHost('unignore', { target: 'desktop' })
+        if (result?.ok === false) throw new Error(result.error ?? 'the ignore entry could not be removed')
+        store.set({ message: t('ignoredRestored') })
+        await runCheck(true)
+      } catch (error) {
+        store.set({ message: `${t('ignoreFailed')}: ${error instanceof Error ? error.message : String(error)}` })
+      } finally {
+        store.set({ desktopBusy: false })
+      }
+    }
+
     //#region Dragging
     function readPosition() {
       try {
@@ -752,14 +927,51 @@ window.__ModuleLoader__.load({
           error ? h('div', { style: styles.rowError }, error) : null,
         ),
         h(
+          'div',
+          { style: styles.rowActions },
+          h(
+            'button',
+            {
+              type: 'button',
+              style: styles.rowCta,
+              disabled: busy || queued || state.batchTotal > 0,
+              onClick: () => updateOne(entry, t),
+            },
+            busy ? t('updating') : queued ? t('queued') : t('update'),
+          ),
+          h(
+            'button',
+            { type: 'button', style: styles.rowLink, disabled: busy || queued || state.batchTotal > 0, onClick: () => ignorePlugin(entry, t) },
+            t('ignore'),
+          ),
+        ),
+      )
+    }
+
+    /** A muted row for a version the user deliberately pinned. */
+    function IgnoredPluginRow({ entry, state, t }) {
+      const busy = state.busy[entry.name] === true
+      return h(
+        'div',
+        { className: 'dsh-updater-row', style: { ...styles.row, ...styles.rowIgnored } },
+        h('span', { style: styles.rowDotIgnored, 'aria-hidden': true }),
+        h(
+          'div',
+          { style: styles.rowMain },
+          h('div', { style: styles.rowName }, entry.name),
+          h(
+            'div',
+            { style: styles.rowMeta },
+            h('span', { style: styles.chip }, entry.installedVersion || '?'),
+            h('span', { style: styles.arrow }, '→'),
+            h('span', { style: styles.chipAccent }, entry.ignoredVersion ?? entry.latestVersion ?? '?'),
+            h('span', { style: styles.hint }, t('ignoredRow', { version: entry.ignoredVersion ?? entry.latestVersion ?? '' })),
+          ),
+        ),
+        h(
           'button',
-          {
-            type: 'button',
-            style: styles.rowCta,
-            disabled: busy || queued || state.batchTotal > 0,
-            onClick: () => updateOne(entry, t),
-          },
-          busy ? t('updating') : queued ? t('queued') : t('update'),
+          { type: 'button', style: styles.rowLink, disabled: busy, onClick: () => unignorePlugin(entry, t) },
+          busy ? t('updating') : t('unignore'),
         ),
       )
     }
@@ -768,6 +980,55 @@ window.__ModuleLoader__.load({
       if (desktop === null || desktop === undefined) return h('div', { style: styles.muted }, t('desktopUnavailable'))
       if (desktop.status === 'unavailable') return h('div', { style: styles.muted }, t('desktopUnavailable'))
       if (desktop.status === 'update') {
+        const migration = desktop.migration
+        if (migration !== null && migration !== undefined) {
+          const disabled = state.desktopBusy || state.batchTotal > 0
+          return h(
+            'div',
+            { className: 'dsh-updater-row', style: styles.migrationCard },
+            h(
+              'div',
+              { style: styles.rowMeta },
+              h('span', { style: styles.chip }, desktop.currentVersion ?? '?'),
+              h('span', { style: styles.arrow }, '→'),
+              h('span', { style: styles.chipAccent }, desktop.latestVersion ?? '?'),
+              h('span', { style: styles.channelChip }, migration.product ?? 'DSH NEXT'),
+            ),
+            h('div', { style: styles.rowName }, t('migrationTitle')),
+            h('div', { style: styles.migrationText }, t('migrationBody')),
+            migration.canPreserveHome
+              ? h('div', { style: styles.migrationNote }, t('migrationPreserve', { home: migration.home ?? '' }))
+              : h('div', { style: styles.rowError }, t('migrationNoHome')),
+            migration.pointer !== null && migration.pointer !== undefined && !migration.pointerMatchesHome && !migration.pointerIsDefault
+              ? h('div', { style: styles.hint }, t('migrationExisting', { pointer: migration.pointer, home: migration.home ?? '' }))
+              : null,
+            h('div', { style: styles.hint }, t('migrationInstallerHint')),
+            h(
+              'div',
+              { style: styles.migrationActions },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  style: styles.primarySmall,
+                  disabled: disabled || !migration.canPreserveHome,
+                  onClick: () => migrateDesktop(t, desktop),
+                },
+                state.desktopBusy ? t('updating') : t('migrationUpdate'),
+              ),
+              h(
+                'button',
+                { type: 'button', style: styles.footerLink, disabled, onClick: () => updateDesktop(t) },
+                t('migrationSkip'),
+              ),
+              h(
+                'button',
+                { type: 'button', style: styles.footerLink, disabled, onClick: () => ignoreDesktopUpdate(desktop, t) },
+                t('desktopIgnore'),
+              ),
+            ),
+          )
+        }
         return h(
           'div',
           { className: 'dsh-updater-row', style: { ...styles.row, ...styles.rowUpdate } },
@@ -783,18 +1044,58 @@ window.__ModuleLoader__.load({
               h('span', { style: styles.arrow }, '→'),
               h('span', { style: styles.chipAccent }, desktop.latestVersion ?? '?'),
               typeof desktop.channel === 'string' ? h('span', { style: styles.channelChip }, desktop.channel) : null,
+              desktopKindLabel(desktop.kind, t) === null ? null : h('span', { style: styles.channelChip }, desktopKindLabel(desktop.kind, t)),
             ),
             h('div', { style: styles.hint }, t('desktopHint')),
           ),
           h(
+            'div',
+            { style: styles.rowActions },
+            h(
+              'button',
+              {
+                type: 'button',
+                style: styles.rowCta,
+                disabled: state.desktopBusy || state.batchTotal > 0,
+                onClick: () => updateDesktop(t),
+              },
+              state.desktopBusy ? t('updating') : t('desktopUpdate'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                style: styles.rowLink,
+                disabled: state.desktopBusy || state.batchTotal > 0,
+                onClick: () => ignoreDesktopUpdate(desktop, t),
+              },
+              t('desktopIgnore'),
+            ),
+          ),
+        )
+      }
+      if (desktop.status === 'ignored') {
+        return h(
+          'div',
+          { style: { ...styles.row, ...styles.rowIgnored } },
+          h('span', { style: styles.rowDotIgnored, 'aria-hidden': true }),
+          h(
+            'div',
+            { style: styles.rowMain },
+            h('div', { style: styles.rowName }, 'DSH Desktop'),
+            h(
+              'div',
+              { style: styles.rowMeta },
+              h('span', { style: styles.chip }, desktop.currentVersion ?? '?'),
+              h('span', { style: styles.arrow }, '→'),
+              h('span', { style: styles.chipAccent }, desktop.ignoredVersion ?? desktop.latestVersion ?? '?'),
+              h('span', { style: styles.hint }, t('desktopIgnored')),
+            ),
+          ),
+          h(
             'button',
-            {
-              type: 'button',
-              style: styles.rowCta,
-              disabled: state.desktopBusy || state.batchTotal > 0,
-              onClick: () => updateDesktop(t),
-            },
-            state.desktopBusy ? t('updating') : t('desktopUpdate'),
+            { type: 'button', style: styles.rowLink, disabled: state.desktopBusy, onClick: () => unignoreDesktopUpdate(t) },
+            state.desktopBusy ? t('updating') : t('unignore'),
           ),
         )
       }
@@ -821,6 +1122,27 @@ window.__ModuleLoader__.load({
           { style: styles.rowMain },
           h('div', { style: styles.rowName }, 'DSH Desktop'),
           h('div', { style: styles.rowError }, `${t('failed')}: ${desktop.reason ?? ''}`),
+        ),
+      )
+    }
+
+    /** Shown when a DSH NEXT install exists but points at a different data home. */
+    function DataGuard({ desktop, state, t }) {
+      const data = desktop?.data
+      if (data?.needsRepair !== true) return null
+      return h(
+        'div',
+        { style: styles.dataGuard },
+        h(
+          'div',
+          { style: styles.rowMain },
+          h('div', { style: styles.rowName }, t('dataTitle')),
+          h('div', { style: styles.migrationText }, t('dataBody', { home: data.home ?? '' })),
+        ),
+        h(
+          'button',
+          { type: 'button', style: styles.ghostSmall, disabled: state.desktopBusy || state.batchTotal > 0, onClick: () => repairDesktop(t) },
+          state.desktopBusy ? t('dataRepairing') : t('dataRepair'),
         ),
       )
     }
@@ -858,6 +1180,7 @@ window.__ModuleLoader__.load({
       const report = state.report
       const pluginUpdates = updateEntries(report)
       const bypassed = (report?.packages ?? []).filter((entry) => entry.name !== PACKAGE && entryState(entry) === 'bypassed')
+      const ignoredEntries = (report?.packages ?? []).filter((entry) => entry.name !== PACKAGE && entry.status === 'ignored')
       const busyAny = Object.keys(state.busy).length > 0 || state.desktopBusy || state.batchTotal > 0
       const checking = state.status === 'checking'
       const updating = state.updateRequestId !== null || state.batchTotal > 0
@@ -1038,10 +1361,18 @@ window.__ModuleLoader__.load({
                     : pluginUpdates.map((entry) => h(PluginRow, { key: entry.name, entry, state, t: tr })),
                   bypassed.length === 0 ? null : h('div', { style: styles.hint }, tr('bypassed', { count: bypassed.length })),
                 ),
+                ignoredEntries.length === 0
+                  ? null
+                  : h(
+                      Section,
+                      { key: 'ignored', title: tr('ignoredTitle') },
+                      ignoredEntries.map((entry) => h(IgnoredPluginRow, { key: entry.name, entry, state, t: tr })),
+                    ),
                 h(
                   Section,
                   { key: 'desktop', title: tr('desktopTitle') },
                   h(DesktopBlock, { desktop: report.desktop, state, t: tr }),
+                  h(DataGuard, { desktop: report.desktop, state, t: tr }),
                 ),
                 report.engine === null || report.engine === undefined
                   ? null
@@ -1268,6 +1599,44 @@ window.__ModuleLoader__.load({
         background: PANEL_PALETTE.row,
         border: `1px solid ${PANEL_PALETTE.border}`,
       },
+      rowIgnored: {
+        background: 'transparent',
+        border: `1px dashed ${PANEL_PALETTE.border}`,
+        opacity: 0.82,
+      },
+      rowActions: { display: 'flex', alignItems: 'center', gap: '6px', flex: 'none' },
+      rowLink: {
+        ...buttonBase,
+        padding: '4px 6px',
+        fontSize: '10px',
+        background: 'transparent',
+        borderColor: 'transparent',
+        color: PANEL_PALETTE.muted,
+      },
+      migrationCard: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        gap: '7px',
+        padding: '10px',
+        margin: '0',
+        borderRadius: '10px',
+        background: 'rgba(245, 181, 68, 0.08)',
+        border: '1px solid rgba(245, 181, 68, 0.32)',
+      },
+      migrationText: { fontSize: '11px', color: PANEL_PALETTE.muted, lineHeight: 1.5, wordBreak: 'break-word' },
+      migrationNote: { fontSize: '10.5px', color: PANEL_PALETTE.text, lineHeight: 1.45, wordBreak: 'break-word' },
+      migrationActions: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' },
+      dataGuard: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
+        padding: '9px 10px',
+        borderRadius: '10px',
+        background: 'rgba(245, 181, 68, 0.08)',
+        border: '1px dashed rgba(245, 181, 68, 0.35)',
+      },
       rowDot: {
         width: '7px',
         height: '7px',
@@ -1307,6 +1676,14 @@ window.__ModuleLoader__.load({
         flex: 'none',
         background: PANEL_PALETTE.red,
         boxShadow: '0 0 0 3px rgba(255, 107, 107, 0.16)',
+      },
+      rowDotIgnored: {
+        width: '7px',
+        height: '7px',
+        borderRadius: '999px',
+        flex: 'none',
+        background: PANEL_PALETTE.faint,
+        opacity: 0.5,
       },
       rowCheck: { flex: 'none', color: PANEL_PALETTE.green, fontSize: '12px', fontWeight: 700 },
       rowMain: { display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0, flex: 1 },

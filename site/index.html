@@ -144,6 +144,16 @@
           <p>插件读 profile 与 bundle 列表；桌面端走官方版本服务；内核显示随桌面端内置的版本。</p>
         </article>
         <article class="feature">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z"></path><path d="m9 12 2 2 4-4"></path></svg></span>
+          <h3>跨版本不丢数据</h3>
+          <p>桌面端切到 DSH NEXT 前，先把数据目录指针写过去；工作区、对话和插件继续沿用，不再打开空工作区。</p>
+        </article>
+        <article class="feature">
+          <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.3-5"></path><path d="M6 8a6 6 0 0 0 12 0"></path><path d="M4 4l16 16"></path><path d="M18 8c0 7-6 7-6 10"></path><path d="M6 8c0 7 6 7 6 10"></path></svg></span>
+          <h3>按版本忽略</h3>
+          <p>插件和桌面端都能只忽略“这一次”的版本；上游发新版本会重新提示，已忽略项可随时取消。</p>
+        </article>
+        <article class="feature">
           <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9"></path><path d="M10 18V5"></path><path d="M16 18v-7"></path><path d="M22 18V3"></path></svg></span>
           <h3>实时进度</h3>
           <p>进度条、当前阶段和 pnpm 输出末行。即使内核不转发事件，阶段计时也会兜底推进。</p>
@@ -251,9 +261,9 @@
           <span class="badge subtle">固定版本</span>
           <h3>锁在某个 Release</h3>
           <p>适合想稳定复现的环境。把版本号换成你需要的 tag：</p>
-          <div class="command small" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.3">
-            <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.3</code>
-            <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.3">复制</button>
+          <div class="command small" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4">
+            <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4</code>
+            <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4">复制</button>
           </div>
           <p class="fine">安装 / 更新后重启 DSH Desktop。插件会出现在侧边栏底部，显示「查看更新」。</p>
         </article>
@@ -283,8 +293,12 @@
           <p>可以检查插件；没有桌面端时，桌面端区域显示“未检测到桌面端”，不会出现桌面端更新按钮。</p>
         </details>
         <details>
+          <summary>更新桌面端后工作区不见了？</summary>
+          <p>DSH NEXT 是独立产品，默认数据目录是 <code>~/.dsh</code>。0.3.4 起面板会先保留数据目录；如果已经装好且没对齐，点「修复数据目录」，或运行 <code>&lt;DSH_HOME&gt;\plugin-updater\restore-desktop-data.ps1</code>。</p>
+        </details>
+        <details>
           <summary>怎么固定版本或回滚？</summary>
-          <p>安装时用 <code>#v0.3.3</code> 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。</p>
+          <p>安装时用 <code>#v0.3.4</code> 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。</p>
         </details>
       </div>
     </section>

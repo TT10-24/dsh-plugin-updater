@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.4
+
+- **Fixed the DSH NEXT startup failure**: `protocol.js` no longer statically imports `@deepseek-ai/cordis`; linked plugins in DSH NEXT fall back to a local `ctx.provide()` service base.
+- **Fixed the false "no Desktop detected"** in DSH NEXT: it does not expose `desktopRuntime`, so the Host now reads `desktopVersion` from `primary-runtime/runtime.json`.
+- Detects a stable → DSH NEXT **product-line change** instead of treating `2.0.20-next` as a routine patch; reports patch / minor / major / product-line separately.
+- Added a migration card: **保留数据并更新** writes the DSH NEXT data-directory pointer to the current DSH home before handing the update to the shell, and backs up the previous pointer.
+- Added a data-directory guard and **修复数据目录** action for an already-installed DSH NEXT whose pointer does not match the current home. A deliberate custom NEXT home is left alone.
+- Added **ignore this version** for every plugin and for the desktop update. Ignored versions are pinned in `<DSH_HOME>/plugin-updater/ignored.json`; a newer release appears again, and the panel keeps an **已忽略** section with **取消忽略**.
+- The Host now writes a handoff manifest and `restore-desktop-data.ps1` under `<DSH_HOME>/plugin-updater/` for manual recovery.
+- Added the `desktopData`, `prepareDesktopUpdate`, `repairDesktopData`, `ignore` and `unignore` Remote methods, plus NEXT-manifest fallback detection.
+- Fixed the host self-check's relative import and added release-line, release-kind, ignore-list and handoff-write coverage.
+
 ## 0.3.3
 
 - Fixed the panel turning pale gray under a light DSH theme: it now uses a fixed dark-navy surface, header, row cards, text and borders that match the interface preview.

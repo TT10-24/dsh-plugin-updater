@@ -1,4 +1,4 @@
 {
   "title": "Update Checker",
-  "description": "Checks installed plugins, DSH Desktop and the core on every launch; a draggable panel reminds and updates on one click — no agent calls, no token spend."
+  "description": "Checks installed plugins, DSH Desktop and the core on every launch; preserves the data directory when the desktop moves to DSH NEXT, and can ignore one version at a time."
 }
