@@ -101,6 +101,44 @@
 - README 增加 dsh-plugin.org 市场徽章。
 - 新增 Issue #9 与 PR #9；行为不变。
 
+## 2026-10-27 · 0.3.4 DSH NEXT 数据目录护栏
+
+目标：修复“桌面端更新到 DSH NEXT 后工作区、对话、插件全没了”的真实事故。
+
+事故链：
+
+1. stable 用户（2.0.18）点击面板的「更新桌面端」。
+2. 官方版本服务在 stable 通道返回 `2.0.20-next`；桌面端自己的 `parseCanonicalUpdateVersion` 允许 stable 提升到 Next 安装器，于是下载并启动了 `DSH-NEXT-2.0.20-next-windows.exe`。
+3. DSH NEXT 是独立产品，默认数据目录是 `~/.dsh`，只读取 `%APPDATA%\DSH NEXT\home\desktop-next-location.json`。
+4. 原数据在 `F:\DSH-Home`（DSH Desktop 的应用内选择），新应用完全不知道，于是以空 home 启动。
+
+第二次问题：DSH NEXT 启动时插件 import 失败：
+
+```text
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@deepseek-ai/cordis'
+imported from F:\Program Files\DSH\plugins\dsh-plugin-updater\protocol.js
+```
+
+原因是 0.3.4 之前的 `protocol.js` 静态 import 了 `@deepseek-ai/cordis`。DSH Desktop 的加载器能解析它，但 DSH NEXT 从 profile 外加载 `link:` 插件时看不到这个包。
+
+修复：
+
+- `protocol.js` 改成动态 import + 本地 `ctx.provide()` 基类兜底，DSH NEXT 里不再在 import 阶段失败。
+- DSH NEXT 不提供 `desktopRuntime`，Host 改从 `primary-runtime/runtime.json` 读取 `desktopVersion`；重启后桌面端区域从“未检测到”恢复为“已是最新 2.0.20-next”。
+- Host 新增 `releaseLine()` / `releaseKind()` 与 `desktopNextPlan()`：当前 stable、目标 `-next` 时返回 `migration` 与 `requiresConfirmation`，不再当普通补丁；补丁 / 功能版本 / 大版本仍走普通更新行。
+- 新增版本级 **忽略**：插件和桌面端都可以只忽略当前最新版本，记录在 `ignored.json`；新版本会重新提示，面板保留“已忽略”区域和“取消忽略”。
+- 客户端新增迁移卡片：**保留数据并更新** → `prepareDesktopUpdate` → 写 NEXT 位置文件（备份旧指针）→ 再走桌面端官方 `/api/desktop/updates/check`。
+- 新增 `desktopData` 与 `repairDesktopData`：已装 NEXT 但指针不对时，面板显示「修复数据目录」。
+- Host 在 `<DSH_HOME>/plugin-updater/` 写 `desktop-handoff.json` 和 `restore-desktop-data.ps1`，即使新应用跑不起来也能手动恢复。
+- 兼容 NEXT 自己的包名 `dsh-desktop-next`，作为没有 `desktopRuntime` 时的 manifest 回退。
+
+验证：
+
+- 本机把指针写回 `F:\DSH-Home` 后，DSH NEXT 的 `readDataDirectory` 能解析并通过 `holdsNextData` 检查。
+- 用 DSH NEXT 自带的 `primary-runtime\...\node.exe` 运行探测，`runtime.json` 返回 `desktopVersion = 2.0.20-next`，桌面端检查为 `current`。
+- `node .check/selfcheck.mjs` 增加 release-line / release-kind、临时 APPDATA 的 handoff 写入与 ignore 列表测试；无 `@deepseek-ai/cordis` 时也能构造 Host 服务。
+- `render-check` 覆盖迁移按钮（先 `prepareDesktopUpdate`，后 `/api/desktop/updates/check`）以及插件/桌面端的忽略按钮。
+
 ## 经验总结
 
 1. Cordis 里访问服务要么 `inject`，要么 `ctx.get()`；直接点属性会抛错。
@@ -109,3 +147,5 @@
 4. 替换已安装插件的代码/新增组件行后，重启是必需的。
 5. 更新失败要恢复旧版本并把原因显示在你能看到的地方。
 6. 进度事件是“锦上添花”，本地阶段兜底能让进度条永远可用。
+7. 跨产品升级先迁移“数据目录指针”，不要假设新版本会沿用旧版本的 home。
+8. 从 profile 外加载的 `link:` 插件不要静态 import 内核包；用可选加载或本地兜底，否则换一个宿主就会在启动阶段失败。

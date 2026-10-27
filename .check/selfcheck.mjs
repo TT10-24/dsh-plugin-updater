@@ -7,9 +7,10 @@
  * path and the desktop layer. It never writes into the profile.
  */
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { UpdaterService, compareVersions, fetchLatestVersion, fetchDesktopVersion } from './index.js'
+import { UpdaterService, compareVersions, fetchLatestVersion, fetchDesktopVersion, releaseLine, releaseKind } from '../index.js'
 
 const failures = []
 const cases = [
@@ -31,10 +32,37 @@ for (const [left, right, expected] of cases) {
 }
 console.log(`version comparisons: ${cases.length - failures.length}/${cases.length} passed`)
 
+const lineCases = [
+  ['2.0.18', 'stable'],
+  ['2.0.20', 'stable'],
+  ['2.0.20-next', 'next'],
+  ['2.0.20-next.1', 'next'],
+  ['2.0.20-beta.1', 'beta'],
+  ['0.2.1-rc.2', 'prerelease'],
+]
+for (const [version, expected] of lineCases) {
+  const actual = releaseLine(version)
+  if (actual !== expected) failures.push(`releaseLine(${version}): expected ${expected}, got ${actual}`)
+}
+console.log(`release lines: ${lineCases.length} checked`)
+
+const kindCases = [
+  ['2.0.18', '2.0.20-next', 'product-line'],
+  ['2.0.18', '2.0.20', 'patch'],
+  ['2.0.18', '2.1.0', 'minor'],
+  ['2.0.18', '3.0.0', 'major'],
+  ['2.0.20-next', '2.0.20', 'prerelease'],
+]
+for (const [current, latest, expected] of kindCases) {
+  const actual = releaseKind(current, latest)
+  if (actual !== expected) failures.push(`releaseKind(${current}, ${latest}): expected ${expected}, got ${actual}`)
+}
+console.log(`release kinds: ${kindCases.length} checked`)
+
 const descriptor = Object.getOwnPropertyDescriptor(UpdaterService.prototype, '@deepseek-ai/dsh-typert-protocol/remote-methods')?.value
 console.log('remote descriptor:', JSON.stringify(descriptor))
 const methods = (descriptor?.methods ?? []).map((entry) => entry.method).sort().join(',')
-if (methods !== 'check,status,update') failures.push(`unexpected Remote methods: ${methods}`)
+if (methods !== 'check,desktopData,ignore,prepareDesktopUpdate,repairDesktopData,status,unignore,update') failures.push(`unexpected Remote methods: ${methods}`)
 
 const profileDir = process.argv[2]
 if (typeof profileDir !== 'string' || profileDir.length === 0) {
@@ -100,6 +128,50 @@ else console.log('new-plugin path:', JSON.stringify(simulated))
 
 if (report.desktop?.status === undefined) failures.push('desktop layer missing from the report')
 if (report.desktop?.currentVersion !== '2.0.18') failures.push(`desktop current version not read from the runtime: ${report.desktop?.currentVersion}`)
+if (report.desktop?.line !== 'stable') failures.push(`desktop release line not reported: ${report.desktop?.line}`)
+if (report.desktop?.data?.home !== home) failures.push(`desktop data home not resolved: ${report.desktop?.data?.home}`)
+if (report.desktop?.migration !== null && report.desktop?.requiresConfirmation !== true) failures.push('a NEXT migration was not marked as requiring confirmation')
+
+/** The handoff write must land in a temporary APPDATA, never the real one. */
+const tempAppData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-next-'))
+const previousAppData = process.env.APPDATA
+process.env.APPDATA = tempAppData
+try {
+  const handoffContext = new Context()
+  handoffContext.provide('profileContext', { name: path.basename(profileDir), dir: profileDir, home })
+  const handoff = new UpdaterService(handoffContext, { profileDir })
+  handoff.dataDir = path.join(tempAppData, 'plugin-updater')
+  handoff.ignoredFile = path.join(handoff.dataDir, 'ignored.json')
+  fs.mkdirSync(handoff.dataDir, { recursive: true })
+  const prepared = handoff.prepareDesktopUpdate(true, '2.0.20-next')
+  const pointerFile = path.join(tempAppData, 'DSH NEXT', 'home', 'desktop-next-location.json')
+  const pointer = fs.existsSync(pointerFile) ? JSON.parse(fs.readFileSync(pointerFile, 'utf8')) : null
+  if (prepared.ok !== true) failures.push(`handoff write failed: ${prepared.error}`)
+  if (pointer?.home !== home) failures.push(`handoff pointer is ${pointer?.home}, expected ${home}`)
+  if (!fs.existsSync(path.join(handoff.dataDir, 'desktop-handoff.json'))) failures.push('handoff manifest was not written')
+  if (!fs.existsSync(path.join(handoff.dataDir, 'restore-desktop-data.ps1'))) failures.push('handoff recovery script was not written')
+  const repaired = handoff.repairDesktopData()
+  if (repaired.ok !== true) failures.push(`handoff repair failed: ${repaired.error}`)
+  const skipped = handoff.prepareDesktopUpdate(false, '2.0.20-next')
+  if (skipped.skipped !== 'preserve-home-not-requested') failures.push('opt-out did not skip the handoff')
+  const notProduct = handoff.prepareDesktopUpdate(true, '2.0.20')
+  if (notProduct.skipped !== 'not-a-product-line-change') failures.push('a stable patch was treated as a product change')
+
+  const ignoredOne = handoff.ignore('dsh-ops', '9.9.9')
+  const ignoredDesktop = handoff.ignore('desktop', '2.0.20-next')
+  const ignoredFile = path.join(handoff.dataDir, 'ignored.json')
+  const ignoredState = fs.existsSync(ignoredFile) ? JSON.parse(fs.readFileSync(ignoredFile, 'utf8')) : null
+  if (ignoredOne.ok !== true || ignoredDesktop.ok !== true) failures.push('ignore() did not accept a package and a desktop version')
+  if (ignoredState?.packages?.['dsh-ops'] !== '9.9.9') failures.push('ignore() did not persist the package version')
+  if (ignoredState?.desktop !== '2.0.20-next') failures.push('ignore() did not persist the desktop version')
+  const unignored = handoff.unignore('dsh-ops')
+  if (unignored.ok !== true) failures.push('unignore() did not remove the package entry')
+  if (handoff.readIgnored().packages['dsh-ops'] !== undefined) failures.push('unignore() left the package entry behind')
+  console.log('ignore list: temporary dataDir OK')
+} finally {
+  process.env.APPDATA = previousAppData
+  fs.rmSync(tempAppData, { recursive: true, force: true })
+}
 if (report.engine !== null && report.engine?.currentVersion === undefined) failures.push('engine layer has no current version')
 console.log('engine detected:', report.engine === null ? 'none (no bundled manifest)' : report.engine.currentVersion)
 

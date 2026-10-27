@@ -32,6 +32,7 @@
  */
 
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -44,7 +45,14 @@ const DEFAULT_DESKTOP_ENDPOINT = 'https://www.dshdesktop.cn/api/desktop/version'
 const DESKTOP_CHANNEL_HEADER = 'x-dsh-desktop-channel'
 const DESKTOP_VERSION_HEADER = 'x-dsh-desktop-version'
 const DESKTOP_PACKAGE_NAME = 'dsh-plugin-desktop'
+const DESKTOP_NEXT_PACKAGE_NAME = 'dsh-desktop-next'
 const ENGINE_PACKAGE_NAME = '@deepseek-ai/dsh'
+/** The separate DSH NEXT product that a stable install can be promoted to. */
+const DESKTOP_NEXT_PRODUCT = 'DSH NEXT'
+const DESKTOP_NEXT_USER_DATA = 'DSH NEXT'
+const DESKTOP_NEXT_LOCATION_FILE = 'desktop-next-location.json'
+const DESKTOP_NEXT_LAST_HOME_FILE = 'desktop-next-last-home.json'
+const DESKTOP_NEXT_DOWNLOAD_PAGE = 'https://www.dshdesktop.cn/download'
 
 /** Remote methods are declared through the typert protocol's marker descriptor. */
 const REMOTE_METHOD_DESCRIPTOR = '@deepseek-ai/dsh-typert-protocol/remote-methods'
@@ -105,6 +113,203 @@ export function compareVersions(left, right) {
     if (b.prerelease === '') return -1
   }
   return a.core === b.core ? (a.prerelease === b.prerelease ? 0 : a.prerelease < b.prerelease ? -1 : 1) : a.core < b.core ? -1 : 1
+}
+
+/**
+ * The release stream a version belongs to. Stable versions have no
+ * prerelease; a `-next` prerelease means the DSH NEXT product line, whose
+ * installer and default data directory are separate from the stable desktop.
+ * Exported for the offline self-check, not part of the plugin API.
+ */
+export function releaseLine(version) {
+  const text = String(version ?? '').trim().replace(/^v/i, '').split('+')[0]
+  const dash = text.indexOf('-')
+  if (dash < 0) return 'stable'
+  const prerelease = text.slice(dash + 1).toLowerCase()
+  if (prerelease === 'next' || prerelease.startsWith('next.')) return 'next'
+  if (prerelease === 'beta' || prerelease.startsWith('beta.')) return 'beta'
+  return 'prerelease'
+}
+
+/**
+ * The kind of change between two desktop versions: a same-product patch,
+ * minor, major or prerelease, or the separate DSH NEXT product line.
+ * Exported for the offline self-check, not part of the plugin API.
+ */
+export function releaseKind(currentVersion, latestVersion) {
+  if (typeof latestVersion !== 'string' || latestVersion.length === 0) return null
+  if (releaseLine(latestVersion) === 'next' && releaseLine(currentVersion) !== 'next') return 'product-line'
+  const numeric = (value) =>
+    String(value ?? '')
+      .trim()
+      .replace(/^v/i, '')
+      .split('+')[0]
+      .split('-')[0]
+      .split('.')
+      .map((part) => (/^\d+$/.test(part) ? Number(part) : null))
+  const left = numeric(currentVersion)
+  const right = numeric(latestVersion)
+  if (left.length < 2 || right.length < 2 || left.some((part) => part === null) || right.some((part) => part === null)) return 'version'
+  if (right[0] !== left[0]) return 'major'
+  if (right[1] !== left[1]) return 'minor'
+  if ((right[2] ?? 0) !== (left[2] ?? 0)) return 'patch'
+  return 'prerelease'
+}
+
+/** Compare two absolute paths the way this host's file system does. */
+function sameDirectory(left, right) {
+  try {
+    const a = path.resolve(left)
+    const b = path.resolve(right)
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+  } catch {
+    return false
+  }
+}
+
+/** Atomic JSON write: a half-written data-directory pointer must never exist. */
+function writeJsonFile(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(value), 'utf8')
+    fs.renameSync(temporary, file)
+  } catch (error) {
+    try {
+      fs.unlinkSync(temporary)
+    } catch {
+      /* the temporary file may not exist */
+    }
+    throw error
+  }
+}
+
+/** Read a `{ home }` pointer, ignoring a missing or malformed file. */
+function readHomePointer(file) {
+  const parsed = readJsonFile(file)
+  if (typeof parsed?.home !== 'string' || !path.isAbsolute(parsed.home)) return null
+  return path.resolve(parsed.home)
+}
+
+/** The DSH data home, from the profile context, the environment, or the profile path. */
+function resolveDshHome(ctx, profileDir) {
+  const profile = safeGet(ctx, 'profileContext')
+  if (typeof profile?.home === 'string' && path.isAbsolute(profile.home)) return path.resolve(profile.home)
+  if (typeof process.env.DSH_HOME === 'string' && path.isAbsolute(process.env.DSH_HOME)) return path.resolve(process.env.DSH_HOME)
+  if (typeof profileDir === 'string' && profileDir.length > 0) {
+    const directory = path.resolve(profileDir)
+    if (path.basename(path.dirname(directory)).toLowerCase() === 'profiles') return path.dirname(path.dirname(directory))
+  }
+  return null
+}
+
+/**
+ * Where DSH NEXT keeps its data-directory choice. It is deliberately outside
+ * every data directory (Electron's Roaming folder), exactly as its data
+ * directory resolver expects, so a choice survives installer and home changes.
+ */
+function desktopNextPaths() {
+  const appData =
+    typeof process.env.APPDATA === 'string' && process.env.APPDATA.length > 0
+      ? process.env.APPDATA
+      : process.platform === 'win32'
+        ? path.join(os.homedir(), 'AppData', 'Roaming')
+        : process.platform === 'darwin'
+          ? path.join(os.homedir(), 'Library', 'Application Support')
+          : process.platform === 'linux'
+            ? process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+            : null
+  if (appData === null) return null
+  const root = path.join(appData, DESKTOP_NEXT_USER_DATA)
+  const home = path.join(root, 'home')
+  return {
+    root,
+    home,
+    locationFile: path.join(home, DESKTOP_NEXT_LOCATION_FILE),
+    lastHomeFile: path.join(home, DESKTOP_NEXT_LAST_HOME_FILE),
+    downloadPage: DESKTOP_NEXT_DOWNLOAD_PAGE,
+  }
+}
+
+/** Whether a DSH NEXT executable exists in a usual Windows install location. */
+function desktopNextInstalled() {
+  const candidates = []
+  for (const key of ['ProgramFiles', 'ProgramW6432']) {
+    const base = process.env[key]
+    if (typeof base === 'string' && base.length > 0) candidates.push(path.join(base, DESKTOP_NEXT_USER_DATA, 'DSH NEXT.exe'))
+  }
+  if (typeof process.env.LOCALAPPDATA === 'string' && process.env.LOCALAPPDATA.length > 0) {
+    candidates.push(path.join(process.env.LOCALAPPDATA, 'Programs', DESKTOP_NEXT_USER_DATA, 'DSH NEXT.exe'))
+  }
+  return candidates.some((file) => {
+    try {
+      return fs.existsSync(file)
+    } catch {
+      return false
+    }
+  })
+}
+
+/**
+ * The data-directory handoff plan for the separate DSH NEXT product.
+ *
+ * DSH NEXT defaults to `~/.dsh` and only follows its own location file, so a
+ * stable install that is promoted to NEXT would otherwise open with an empty
+ * home. This plan is read-only; `preserveDesktopHome` applies it.
+ */
+export function desktopNextPlan(ctx, profileDir, fallbackHome = null) {
+  const paths = desktopNextPaths()
+  const resolved = resolveDshHome(ctx, profileDir)
+  const home =
+    resolved ??
+    (typeof fallbackHome === 'string' && path.isAbsolute(fallbackHome) ? path.resolve(fallbackHome) : null)
+  if (paths === null) {
+    return {
+      product: DESKTOP_NEXT_PRODUCT,
+      available: false,
+      installed: false,
+      detected: false,
+      home,
+      pointer: null,
+      pointerMatchesHome: false,
+      pointerIsDefault: false,
+      defaultHome: path.join(os.homedir(), '.dsh'),
+      needsRepair: false,
+      canPreserveHome: false,
+      locationFile: null,
+      lastHomeFile: null,
+      downloadPage: DESKTOP_NEXT_DOWNLOAD_PAGE,
+      environmentVariable: 'DSH_DESKTOP_NEXT_HOME',
+    }
+  }
+  const installed = desktopNextInstalled()
+  let detected = installed
+  try {
+    detected = detected || fs.existsSync(paths.root)
+  } catch {
+    /* the probe is best-effort */
+  }
+  const pointer = readHomePointer(paths.locationFile)
+  const pointerMatchesHome = home !== null && pointer !== null && sameDirectory(pointer, home)
+  const defaultHome = path.join(os.homedir(), '.dsh')
+  const pointerIsDefault = pointer !== null && sameDirectory(pointer, defaultHome)
+  return {
+    product: DESKTOP_NEXT_PRODUCT,
+    available: true,
+    installed,
+    detected,
+    home,
+    pointer,
+    pointerMatchesHome,
+    pointerIsDefault,
+    defaultHome,
+    needsRepair: detected && home !== null && !pointerMatchesHome && (pointer === null || pointerIsDefault),
+    canPreserveHome: home !== null,
+    locationFile: paths.locationFile,
+    lastHomeFile: paths.lastHomeFile,
+    downloadPage: DESKTOP_NEXT_DOWNLOAD_PAGE,
+    environmentVariable: 'DSH_DESKTOP_NEXT_HOME',
+  }
 }
 
 /** One version answer as a comparable outcome instead of a thrown error. */
@@ -215,12 +420,45 @@ function readProfileManifest(dir) {
   return { file, parsed: JSON.parse(fs.readFileSync(file, 'utf8')) }
 }
 
+/**
+ * Where a DSH NEXT runtime records the desktop version it was built for.
+ * The Host process itself is `primary-runtime/dependencies/node/bin/node.exe`,
+ * so `runtime.json` sits three levels above its executable.
+ */
+function desktopRuntimeVersionCandidates() {
+  const candidates = []
+  try {
+    if (typeof process.resourcesPath === 'string' && process.resourcesPath.length > 0) {
+      candidates.push(path.join(process.resourcesPath, 'runtime', process.arch, 'primary-runtime', 'runtime.json'))
+    }
+  } catch {
+    /* the path is optional */
+  }
+  try {
+    if (typeof process.execPath === 'string' && process.execPath.length > 0) {
+      const directory = path.dirname(process.execPath)
+      candidates.push(path.join(directory, 'runtime.json'))
+      candidates.push(path.join(directory, '..', 'runtime.json'))
+      candidates.push(path.join(directory, '..', '..', '..', 'runtime.json'))
+    }
+  } catch {
+    /* the path is optional */
+  }
+  try {
+    candidates.push(path.join(process.cwd(), 'runtime.json'))
+  } catch {
+    /* the path is optional */
+  }
+  return [...new Set(candidates)]
+}
+
 /** Where a packaged Desktop keeps its own manifest, in the orders a kernel has used. */
 function desktopManifestCandidates() {
   const candidates = []
   try {
     if (typeof process.resourcesPath === 'string' && process.resourcesPath.length > 0) {
       candidates.push(path.join(process.resourcesPath, 'app', 'package.json'))
+      candidates.push(path.join(process.resourcesPath, 'app.asar', 'package.json'))
       candidates.push(path.join(process.resourcesPath, 'package.json'))
     }
   } catch {
@@ -229,6 +467,7 @@ function desktopManifestCandidates() {
   try {
     if (typeof process.execPath === 'string' && process.execPath.length > 0) {
       candidates.push(path.join(path.dirname(process.execPath), 'resources', 'app', 'package.json'))
+      candidates.push(path.join(path.dirname(process.execPath), 'resources', 'app.asar', 'package.json'))
     }
   } catch {
     /* the path is optional */
@@ -247,6 +486,7 @@ function engineManifestCandidates(ctx) {
   try {
     if (typeof process.resourcesPath === 'string' && process.resourcesPath.length > 0) {
       candidates.push(path.join(process.resourcesPath, 'app', 'node_modules', '@deepseek-ai', 'dsh', 'package.json'))
+      candidates.push(path.join(process.resourcesPath, 'app.asar', 'node_modules', '@deepseek-ai', 'dsh', 'package.json'))
     }
   } catch {
     /* the path is optional */
@@ -254,6 +494,7 @@ function engineManifestCandidates(ctx) {
   try {
     if (typeof process.execPath === 'string' && process.execPath.length > 0) {
       candidates.push(path.join(path.dirname(process.execPath), 'resources', 'app', 'node_modules', '@deepseek-ai', 'dsh', 'package.json'))
+      candidates.push(path.join(path.dirname(process.execPath), 'resources', 'app.asar', 'node_modules', '@deepseek-ai', 'dsh', 'package.json'))
     }
   } catch {
     /* the path is optional */
@@ -273,9 +514,23 @@ function resolveDesktopInstallation(ctx) {
   if (typeof updates?.currentVersion === 'string' && updates.currentVersion.length > 0) {
     return { version: updates.currentVersion, channel, source: 'desktopRuntime', packaged: updates?.isPackaged === true }
   }
+  for (const file of desktopRuntimeVersionCandidates()) {
+    const parsed = readJsonFile(file)
+    if (typeof parsed?.desktopVersion === 'string' && CANONICAL_VERSION.test(parsed.desktopVersion)) {
+      return { version: parsed.desktopVersion, channel, source: file, packaged: true }
+    }
+  }
+  const environmentVersion = process.env.DSH_DESKTOP_PRODUCT_VERSION
+  if (typeof environmentVersion === 'string' && CANONICAL_VERSION.test(environmentVersion)) {
+    return { version: environmentVersion, channel, source: 'environment', packaged: true }
+  }
   for (const file of desktopManifestCandidates()) {
     const parsed = readJsonFile(file)
-    if (parsed?.name === DESKTOP_PACKAGE_NAME && typeof parsed.version === 'string' && parsed.version.length > 0) {
+    if (
+      (parsed?.name === DESKTOP_PACKAGE_NAME || parsed?.name === DESKTOP_NEXT_PACKAGE_NAME) &&
+      typeof parsed.version === 'string' &&
+      parsed.version.length > 0
+    ) {
       return { version: parsed.version, channel, source: file, packaged: true }
     }
   }
@@ -326,6 +581,8 @@ export class UpdaterService extends Service {
     this.pending = null
     this.dataDir = resolveDataDir(ctx)
     this.lastReportFile = this.dataDir === null ? null : path.join(this.dataDir, 'last-report.json')
+    this.ignoredFile = this.dataDir === null ? null : path.join(this.dataDir, 'ignored.json')
+    this.ignored = this.readIgnored()
     this.state = { checking: false, error: null, report: this.readCachedReport() }
   }
 
@@ -346,6 +603,99 @@ export class UpdaterService extends Service {
       if (home !== null) return path.join(home, 'profiles', profile.name)
     }
     return null
+  }
+
+  /** Data-directory status for the separate DSH NEXT product, if present. */
+  desktopData() {
+    const fallback = this.dataDir === null ? null : path.dirname(this.dataDir)
+    return desktopNextPlan(this.ctx, this.profileDir(), fallback)
+  }
+
+  /** A portable recovery script for the case where this plugin cannot run in the new app. */
+  restoreScript(home) {
+    const json = JSON.stringify({ home }).replace(/'/g, "''")
+    return [
+      '# Restore the DSH NEXT data directory written by dsh-plugin-updater.',
+      '# Run this after installing DSH NEXT if it opened with an empty workspace.',
+      "$ErrorActionPreference = 'Stop'",
+      "$root = Join-Path $env:APPDATA 'DSH NEXT\\home'",
+      'New-Item -ItemType Directory -Force -Path $root | Out-Null',
+      `$json = '${json}'`,
+      '$utf8 = New-Object System.Text.UTF8Encoding($false)',
+      "[System.IO.File]::WriteAllText((Join-Path $root 'desktop-next-location.json'), $json, $utf8)",
+      "[System.IO.File]::WriteAllText((Join-Path $root 'desktop-next-last-home.json'), $json, $utf8)",
+      "Write-Host 'DSH NEXT will use this data directory on its next launch.'",
+      '',
+    ].join('\r\n')
+  }
+
+  /**
+   * Point DSH NEXT at this profile's data home, backing up whatever choice it
+   * had. Writing the pointer before the installer runs is what keeps the
+   * workspace, conversations and plugins visible after a product-line change.
+   */
+  preserveDesktopHome(reason) {
+    const plan = this.desktopData()
+    if (!plan.available) return { ok: false, error: 'DSH NEXT data-directory support is unavailable on this platform' }
+    if (plan.home === null) return { ok: false, error: 'could not resolve the current DSH data directory' }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const backedUp = []
+    for (const file of [plan.locationFile, plan.lastHomeFile]) {
+      if (typeof file !== 'string') continue
+      try {
+        if (fs.existsSync(file)) {
+          const backup = `${file}.bak-${stamp}`
+          fs.copyFileSync(file, backup)
+          backedUp.push(backup)
+        }
+      } catch (error) {
+        return { ok: false, error: `could not back up ${file}: ${error instanceof Error ? error.message : String(error)}` }
+      }
+    }
+    try {
+      writeJsonFile(plan.locationFile, { home: plan.home })
+      writeJsonFile(plan.lastHomeFile, { home: plan.home })
+    } catch (error) {
+      return { ok: false, error: `could not write the DSH NEXT data directory: ${error instanceof Error ? error.message : String(error)}` }
+    }
+    const handoff = {
+      version: 1,
+      createdAt: new Date().toISOString(),
+      reason,
+      product: plan.product,
+      home: plan.home,
+      locationFile: plan.locationFile,
+      lastHomeFile: plan.lastHomeFile,
+      downloadPage: plan.downloadPage,
+    }
+    if (this.dataDir !== null) {
+      try {
+        writeJsonFile(path.join(this.dataDir, 'desktop-handoff.json'), handoff)
+        fs.writeFileSync(path.join(this.dataDir, 'restore-desktop-data.ps1'), this.restoreScript(plan.home), 'utf8')
+      } catch (error) {
+        this.log(`could not write the handoff record: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    this.trace('desktop:preserve-home', { reason, home: plan.home, backedUp })
+    return { ok: true, ...handoff, backedUp }
+  }
+
+  /**
+   * Remote: preflight a Desktop update that changes product line.
+   *
+   * Only a `-next` target is treated as a product change. It writes the
+   * successor's data-directory pointer before the shell downloads or installs
+   * anything, then the client continues with the shell's official flow.
+   */
+  prepareDesktopUpdate(preserveHome, targetVersion) {
+    if (preserveHome !== true) return { ok: true, skipped: 'preserve-home-not-requested' }
+    if (releaseLine(targetVersion) !== 'next') return { ok: true, skipped: 'not-a-product-line-change' }
+    return this.preserveDesktopHome('desktop-update')
+  }
+
+  /** Remote: repair a DSH NEXT pointer that does not point at this data home. */
+  repairDesktopData() {
+    return this.preserveDesktopHome('manual-repair')
   }
 
   /** Registry the plugin manager itself would ask, so the check follows the profile. */
@@ -373,6 +723,87 @@ export class UpdaterService extends Service {
       dshHomePath: typeof this.ctx?.dshHomePath === 'function',
       degraded: profileContext === undefined || pluginManager === undefined,
     }
+  }
+
+
+  /** Read the per-profile ignore list; a malformed file is treated as empty. */
+  readIgnored() {
+    const empty = { version: 1, packages: {}, desktop: null, updatedAt: null }
+    if (this.ignoredFile === null) return empty
+    const parsed = readJsonFile(this.ignoredFile)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return empty
+    const packages = {}
+    if (parsed.packages !== null && typeof parsed.packages === 'object' && !Array.isArray(parsed.packages)) {
+      for (const [name, version] of Object.entries(parsed.packages)) {
+        if (typeof name === 'string' && name.length > 0 && typeof version === 'string' && version.length > 0) packages[name] = version
+      }
+    }
+    return {
+      version: 1,
+      packages,
+      desktop: typeof parsed.desktop === 'string' && parsed.desktop.length > 0 ? parsed.desktop : null,
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
+    }
+  }
+
+  /** Persist the ignore list next to the cached report. */
+  writeIgnored() {
+    if (this.ignoredFile === null) return false
+    try {
+      writeJsonFile(this.ignoredFile, {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        packages: this.ignored.packages,
+        desktop: this.ignored.desktop,
+      })
+      return true
+    } catch (error) {
+      this.log('could not save ignored updates: ' + (error instanceof Error ? error.message : String(error)))
+      return false
+    }
+  }
+
+  /**
+   * Ignore exactly one version of one package, or the current desktop update.
+   * A newer version still appears, so this is a version pin, not a mute switch.
+   */
+  ignore(target, version) {
+    const name = typeof target === 'string' ? target.trim() : ''
+    const value = typeof version === 'string' ? version.trim() : ''
+    if (name.length === 0) return { ok: false, error: 'ignore() needs a package name or "desktop"' }
+    if (!/^\d+\.\d+/.test(value)) return { ok: false, error: 'ignore() needs an exact version' }
+    const previous = this.ignored
+    this.ignored =
+      name === 'desktop'
+        ? { ...previous, desktop: value, updatedAt: new Date().toISOString() }
+        : { ...previous, packages: { ...previous.packages, [name]: value }, updatedAt: new Date().toISOString() }
+    if (!this.writeIgnored()) {
+      this.ignored = previous
+      return { ok: false, error: 'could not save the ignore list' }
+    }
+    this.state.report = null
+    this.trace('ignore:set', { target: name, version: value })
+    return { ok: true, target: name, version: value, ignored: this.ignored }
+  }
+
+  /** Remove an ignore entry so the next check can offer that version again. */
+  unignore(target) {
+    const name = typeof target === 'string' ? target.trim() : ''
+    if (name.length === 0) return { ok: false, error: 'unignore() needs a package name or "desktop"' }
+    const previous = this.ignored
+    if (name === 'desktop') this.ignored = { ...previous, desktop: null, updatedAt: new Date().toISOString() }
+    else {
+      const packages = { ...previous.packages }
+      delete packages[name]
+      this.ignored = { ...previous, packages, updatedAt: new Date().toISOString() }
+    }
+    if (!this.writeIgnored()) {
+      this.ignored = previous
+      return { ok: false, error: 'could not save the ignore list' }
+    }
+    this.state.report = null
+    this.trace('ignore:clear', { target: name })
+    return { ok: true, target: name, ignored: this.ignored }
   }
 
   /** Read the cached report written by an earlier boot, if it is still fresh and parseable. */
@@ -465,13 +896,16 @@ export class UpdaterService extends Service {
         const installedVersion =
           versionFromSpec(entry.spec) ?? entry.manifestVersion ?? (packageDir === null ? null : readInstalledVersion(packageDir))
         const comparable = installedVersion !== null
-        const hasUpdate = latest.status === 'ok' && comparable && compareVersions(installedVersion, latest.version) < 0
+        const ignoredVersion = this.ignored.packages[name] ?? null
+        const ignored = latest.status === 'ok' && ignoredVersion !== null && ignoredVersion === latest.version
+        const hasUpdate = latest.status === 'ok' && comparable && !ignored && compareVersions(installedVersion, latest.version) < 0
         return {
           name,
           installedVersion: installedVersion ?? (typeof entry.spec === 'string' ? entry.spec : ''),
           latestVersion: latest.version,
           hasUpdate,
-          status: latest.status === 'ok' ? (hasUpdate ? 'update' : comparable ? 'current' : 'bypassed') : latest.status,
+          ignoredVersion,
+          status: latest.status === 'ok' ? (ignored ? 'ignored' : hasUpdate ? 'update' : comparable ? 'current' : 'bypassed') : latest.status,
           reason: latest.reason,
           repository: packageDir === null ? null : readRepository(packageDir),
           source: entry.source,
@@ -492,12 +926,22 @@ export class UpdaterService extends Service {
         reason: 'no DSH Desktop installation detected',
         endpoint: this.desktopEndpoint,
         canUpdate: false,
+        data: this.desktopData(),
       }
     }
     const latest = await fetchDesktopVersion(this.desktopEndpoint, installation.channel, installation.version, signal)
     const hasUpdate = latest.status === 'ok' && compareVersions(installation.version, latest.version) < 0
+    const line = releaseLine(installation.version)
+    const latestLine = latest.status === 'ok' ? releaseLine(latest.version) : null
+    const kind = latest.status === 'ok' ? releaseKind(installation.version, latest.version) : null
+    const ignoredVersion = this.ignored.desktop
+    const ignored = latest.status === 'ok' && ignoredVersion !== null && ignoredVersion === latest.version
+    const data = this.desktopData()
+    /** Stable may be promoted to the separate NEXT product; that is a migration, not a patch. */
+    const migration =
+      latest.status === 'ok' && hasUpdate && !ignored && latestLine === 'next' && line !== 'next' ? { ...data, targetVersion: latest.version } : null
     return {
-      status: latest.status === 'ok' ? (hasUpdate ? 'update' : 'current') : latest.status,
+      status: latest.status === 'ok' ? (ignored ? 'ignored' : hasUpdate ? 'update' : 'current') : latest.status,
       currentVersion: installation.version,
       latestVersion: latest.version,
       channel: latest.channel ?? installation.channel,
@@ -505,6 +949,13 @@ export class UpdaterService extends Service {
       endpoint: this.desktopEndpoint,
       source: installation.source,
       canUpdate: true,
+      line,
+      latestLine,
+      kind,
+      ignoredVersion,
+      migration,
+      requiresConfirmation: migration !== null,
+      data,
     }
   }
 
@@ -555,6 +1006,7 @@ export class UpdaterService extends Service {
       updates: packages.filter((entry) => entry.hasUpdate).map((entry) => entry.name),
       desktop,
       engine,
+      ignored: { packages: this.ignored.packages, desktop: this.ignored.desktop },
       compat: this.compat(),
       error: this.state.error,
     }
@@ -721,6 +1173,8 @@ export class UpdaterService extends Service {
       updates: this.state.report?.updates?.length ?? 0,
       desktop: this.state.report?.desktop?.status ?? null,
       engine: this.state.report?.engine?.status ?? null,
+      ignoredPackages: Object.keys(this.ignored.packages).length,
+      ignoredDesktop: this.ignored.desktop,
       compat: this.compat(),
     }
   }
@@ -781,3 +1235,8 @@ export function apply(ctx, config) {
 markRemoteMethod('check')
 markRemoteMethod('update')
 markRemoteMethod('status')
+markRemoteMethod('desktopData')
+markRemoteMethod('prepareDesktopUpdate')
+markRemoteMethod('repairDesktopData')
+markRemoteMethod('ignore')
+markRemoteMethod('unignore')
