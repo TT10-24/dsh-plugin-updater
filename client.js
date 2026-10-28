@@ -128,7 +128,7 @@ window.__ModuleLoader__.load({
       appearance: '面板设置',
       appearanceHint: '调整大小、颜色与位置',
       panelWidth: '宽度',
-      panelHeight: '最大高度',
+      panelHeight: '面板高度',
       accentColor: '强调色',
       customColor: '自定义',
       surfaceColor: '背景',
@@ -209,7 +209,7 @@ window.__ModuleLoader__.load({
       appearance: 'Panel settings',
       appearanceHint: 'Size, color and position',
       panelWidth: 'Width',
-      panelHeight: 'Max height',
+      panelHeight: 'Panel height',
       accentColor: 'Accent',
       customColor: 'Custom',
       surfaceColor: 'Surface',
@@ -1078,7 +1078,7 @@ window.__ModuleLoader__.load({
     }
 
     /** The panel-properties popover opened by the three-dot header button. */
-    function AppearanceMenu({ t, appearance, onChange, onReset, onResetPosition, onClose, menuRef }) {
+    function AppearanceMenu({ t, appearance, onChange, onReset, onResetPosition, onClose }) {
       const tr = makeT(t)
       const range = (key, label, limits) =>
         h(
@@ -1106,7 +1106,6 @@ window.__ModuleLoader__.load({
         'div',
         {
           className: 'dsh-updater-appearance',
-          ref: menuRef,
           style: styles.appearanceMenu,
           role: 'dialog',
           'aria-label': tr('appearance'),
@@ -1243,8 +1242,6 @@ window.__ModuleLoader__.load({
       const tr = makeT(t)
       const state = useUpdaterState()
       const panelRef = React.useRef(null)
-      const menuRef = React.useRef(null)
-      const menuButtonRef = React.useRef(null)
       const { position, dragging, startDrag, reset } = useDrag(panelRef, anchorRef ?? null)
       const [appearance, setAppearance] = React.useState(readAppearance)
       const [menuOpen, setMenuOpen] = React.useState(false)
@@ -1268,15 +1265,22 @@ window.__ModuleLoader__.load({
           : `${state.updateName ?? ''} · ${stageLabel}`
 
       const surface = PANEL_SURFACES[appearance.surface] ?? PANEL_SURFACES.navy
+      const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight
+      const requestedHeight = Math.min(appearance.height, Math.max(0, viewportHeight - 16))
+      // A taller panel must grow upward, not get clipped by its old top edge.
+      const effectiveTop = position === null || viewportHeight === 0
+        ? null
+        : Math.max(8, Math.min(position.top, viewportHeight - requestedHeight - 8))
       const panelStyle = {
         ...styles.panel,
-        ...(position === null ? { left: '12px', bottom: '96px' } : { left: `${position.left}px`, top: `${position.top}px` }),
+        ...(position === null ? { left: '12px', bottom: '96px' } : { left: `${position.left}px`, top: `${effectiveTop}px` }),
         width: position === null
           ? `min(${appearance.width}px, calc(100vw - 24px))`
           : `min(${appearance.width}px, calc(100vw - ${Math.max(12, position.left)}px - 8px))`,
-        maxHeight: position === null
+        height: position === null
           ? `min(${appearance.height}px, calc(100vh - 120px))`
-          : `min(${appearance.height}px, calc(100vh - ${Math.max(12, position.top)}px - 8px))`,
+          : `min(${appearance.height}px, calc(100vh - ${effectiveTop}px - 8px))`,
+        maxHeight: '100vh',
         opacity: appearance.opacity,
         '--upd-bg': surface.bg,
         '--upd-head': surface.head,
@@ -1315,18 +1319,6 @@ window.__ModuleLoader__.load({
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
       }, [onClose, menuOpen])
-
-      /** A click outside the popover and its trigger dismisses it. */
-      React.useEffect(() => {
-        if (!menuOpen) return undefined
-        const onPointerDown = (event) => {
-          if (menuRef.current?.contains(event.target) === true) return
-          if (menuButtonRef.current?.contains(event.target) === true) return
-          setMenuOpen(false)
-        }
-        document.addEventListener('pointerdown', onPointerDown)
-        return () => document.removeEventListener('pointerdown', onPointerDown)
-      }, [menuOpen])
 
       const aside = h(
         'div',
@@ -1402,7 +1394,6 @@ window.__ModuleLoader__.load({
           h(
             'button',
             {
-              ref: menuButtonRef,
               type: 'button',
               className: 'dsh-updater-menu-button',
               style: { ...styles.menuButton, ...(menuOpen ? styles.menuButtonOpen : null) },
@@ -1436,7 +1427,8 @@ window.__ModuleLoader__.load({
             '×',
           ),
         ),
-        menuOpen ? h('div', { style: styles.appearanceBackdrop, onPointerDown: () => setMenuOpen(false) }) : null,
+        // Sticky settings: outside clicks must not drop the user back to the main panel.
+        menuOpen ? h('div', { style: styles.appearanceBackdrop, 'aria-hidden': true }) : null,
         menuOpen
           ? h(AppearanceMenu, {
               t: tr,
@@ -1445,7 +1437,6 @@ window.__ModuleLoader__.load({
               onReset: resetAppearance,
               onResetPosition: reset,
               onClose: () => setMenuOpen(false),
-              menuRef,
             })
           : null,
         updating

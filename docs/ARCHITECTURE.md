@@ -117,10 +117,10 @@ Host 是普通 Node 子进程，浏览器的目录选择器拿不到绝对路径
 
 面板的尺寸与配色完全在 Client 侧，Host 不参与：
 
-- 设置存在 `localStorage` 的 `dsh-plugin-updater:panel-appearance`：`width`、`height`（最大高度）、`accent` / `accent2`、`surface`、`opacity`。
+- 设置存在 `localStorage` 的 `dsh-plugin-updater:panel-appearance`：`width`、`height`（面板高度）、`accent` / `accent2`、`surface`、`opacity`。
 - `sanitizeAppearance` 把越界或损坏的值夹回范围，因此手动改 localStorage 也不会让面板消失。
 - 面板根节点写入 `--upd-bg`、`--upd-head`、`--upd-row`、`--upd-border`、`--upd-accent`、`--upd-glow` 等 CSS 变量；`PANEL_PALETTE` 全部走 `var(..., fallback)`。
-- 标题栏的三个点打开全宽设置页；点击遮罩、`Esc` 或「完成」关闭。`Esc` 先关设置页，再关面板。
+- 标题栏的三个点打开全宽设置页；只通过三个点、`Esc`、「完成」或关闭按钮退出，点击遮罩或面板外侧不会把设置页退回主面板。`Esc` 先关设置页，再关面板。
 - 标题栏不再显示副标题，页脚只显示上次检查时间。
 
 ## 进度

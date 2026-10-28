@@ -314,6 +314,13 @@ if (batchButton === undefined) {
   if (requestIds.some((id) => typeof id !== 'string' || id.length === 0)) failures.push('batch update is missing a request id')
 }
 
+/** Panel height must be a real height that can grow upward, and settings must not dismiss on an outside click. */
+if (!/const effectiveTop\s*=/.test(source)) failures.push('panel height does not recompute its top edge')
+if (!/height:\s*position === null/.test(source)) failures.push('panel height is still only a max-height')
+if (!source.includes("panelHeight: '面板高度'") || !source.includes("panelHeight: 'Panel height'")) failures.push('panel height label is missing')
+if (source.includes("document.addEventListener('pointerdown', onPointerDown)")) failures.push('outside pointerdown still dismisses panel settings')
+if (/appearanceBackdrop[^\n]*onPointerDown/.test(source)) failures.push('settings backdrop still dismisses panel settings')
+
 for (const expected of ['pluginsTitle', 'nextTitle', 'engineTitle', 'update', 'nextMigrate', 'ignoredTitle', 'unignore', 'checkNow']) {
   if (!text.has(expected)) failures.push(`rendered output is missing ${expected}`)
 }
