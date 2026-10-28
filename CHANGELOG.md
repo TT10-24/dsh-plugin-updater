@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.6
 
 - **Fixed the panel height slider sometimes appearing to do nothing.** The control is now a real panel height (380–820px), not only a `max-height`; when the panel needs more room, its top edge moves up instead of being clipped by the old position. The label now reads **面板高度 / Panel height**.
 - **Panel settings no longer fall back to the main panel when you click outside.** The settings popover stays open until you use the three-dot button, `Esc`, **完成** or the close button; clicking the dimmed backdrop or anywhere outside the updater panel leaves it open.
