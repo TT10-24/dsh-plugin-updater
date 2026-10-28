@@ -9,6 +9,11 @@
 - Added **panel settings** behind the three-dot button in the header: width (320–560px), maximum height (380–820px), five accent presets plus a custom color, four dark surfaces, and opacity (72–100%). Settings persist in `dsh-plugin-updater:panel-appearance`; **恢复默认** and **复位位置** are one click away.
 - The accent now themes the logo, primary buttons, progress bar, live dots and focus ring through CSS custom properties instead of a hard-coded blue.
 - Added host coverage for the `bundle-in-use` fallback, its rollback, and the `stop-profile` path; the render check now asserts the three-dot settings trigger.
+- **Removed DSH Desktop support entirely.** The Host no longer calls the public desktop version service, the shell's update route or `/api/desktop/restart`; the product-line migration card and desktop ignore controls are gone. DSH NEXT updates itself.
+- The **DSH NEXT** section now shows the running version and data folder. A new migration sheet can point DSH NEXT at a user-chosen folder: pointer-only (existing data) or copy mode (profiles, sessions, storages and root config), with pointer backups and a failed-copy cleanup.
+- Added the `chooseDataFolder` (Windows native folder picker) and `migrateDataHome` Remote methods; removed `desktopData`, `prepareDesktopUpdate` and `repairDesktopData`.
+- Removed the header subtitle and the “不消耗 token” footer text; the panel now shows only the title, plugin rows, DSH NEXT card, core row and last-check time.
+- The `inject` surface is unchanged; plugin updates still use the manager and roll back on failure.
 
 ## 0.3.4
 
