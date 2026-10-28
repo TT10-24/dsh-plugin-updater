@@ -156,6 +156,16 @@ const ALLOWED_DOM_PROPS = new Set([
   'aria-hidden',
   'aria-expanded',
   'aria-labelledby',
+  'aria-haspopup',
+  'aria-pressed',
+  'aria-valuemin',
+  'aria-valuemax',
+  'aria-valuenow',
+  'min',
+  'max',
+  'step',
+  'value',
+  'onChange',
   'sec-fetch-site',
   'viewBox',
   'width',
@@ -168,7 +178,7 @@ const ALLOWED_DOM_PROPS = new Set([
   'd',
   'xmlns',
 ])
-const ALLOWED_STYLE = /^[a-zA-Z][a-zA-Z0-9]*$/
+const ALLOWED_STYLE = /^(?:--[a-zA-Z0-9-]+|[a-zA-Z][a-zA-Z0-9]*)$/
 
 function flattenText(node) {
   if (node === null || node === undefined || typeof node === 'boolean') return ''
@@ -245,6 +255,16 @@ for (const [slot, list] of components) {
 }
 
 console.log('components rendered:', [...components.values()].reduce((total, list) => total + list.length, 0))
+
+/** The three-dot header control must exist and describe a popover. */
+const appearanceButton = buttons.find((button) => button.props['aria-label'] === 'appearance')
+if (appearanceButton === undefined) {
+  failures.push('no panel-settings button rendered')
+} else {
+  if (appearanceButton.props.title !== 'appearance') failures.push('panel-settings button has no title')
+  if (appearanceButton.props['aria-haspopup'] !== 'dialog') failures.push('panel-settings button is not marked as a popover trigger')
+  if (appearanceButton.props['aria-expanded'] !== false) failures.push('panel-settings button starts expanded')
+}
 
 /** A product-line change must preflight the data directory before the shell route. */
 const migrationButton = buttons.find((button) => flattenText(button.children).includes('migrationUpdate'))

@@ -30,12 +30,43 @@ window.__ModuleLoader__.load({
     const DETAIL_SLOT = 'plugins.detail.actions'
     const PACKAGE = 'dsh-plugin-updater'
     const POSITION_KEY = 'dsh-plugin-updater:panel-position'
+    const APPEARANCE_KEY = 'dsh-plugin-updater:panel-appearance'
     const PANEL_WIDTH = 408
     const PANEL_MAX_HEIGHT = 620
 
+    /** Bounds for the appearance controls; also the sanitiser for stored values. */
+    const APPEARANCE_LIMITS = {
+      width: { min: 320, max: 560, step: 4 },
+      height: { min: 380, max: 820, step: 10 },
+      opacity: { min: 0.72, max: 1, step: 0.02 },
+    }
+    const APPEARANCE_DEFAULT = {
+      width: PANEL_WIDTH,
+      height: PANEL_MAX_HEIGHT,
+      accent: '#6b8cff',
+      accent2: '#8f6bff',
+      surface: 'navy',
+      opacity: 1,
+    }
+    /** Dark surfaces keep the panel readable without inheriting a light theme. */
+    const PANEL_SURFACES = {
+      navy: { bg: '#151923', head: '#1a1f2b', row: '#1e2431', rowHover: '#232a39', border: '#2a3140', borderStrong: '#3a4356' },
+      graphite: { bg: '#14161a', head: '#191c21', row: '#1e2228', rowHover: '#252a31', border: '#2b3038', borderStrong: '#3b424d' },
+      plum: { bg: '#1a1420', head: '#211828', row: '#261c2f', rowHover: '#2f2339', border: '#3a2b44', borderStrong: '#4a3657' },
+      forest: { bg: '#101a17', head: '#15211d', row: '#192723', rowHover: '#1f302b', border: '#2a3c35', borderStrong: '#385046' },
+    }
+    /** Accent pairs for the logo, primary buttons, progress bar and live dots. */
+    const PANEL_ACCENTS = [
+      { id: 'indigo', accent: '#6b8cff', accent2: '#8f6bff' },
+      { id: 'emerald', accent: '#3ecf8e', accent2: '#2bb673' },
+      { id: 'amber', accent: '#f5b544', accent2: '#ff8a3d' },
+      { id: 'rose', accent: '#ff6b9a', accent2: '#c86bff' },
+      { id: 'cyan', accent: '#46c7f5', accent2: '#4c8dff' },
+    ]
+
     const ZH = {
       title: '更新检查',
-      subtitle: '插件 · 桌面端 · 内核 · 拖动标题栏移动',
+      subtitle: '插件 · 桌面端 · 内核 · 拖动移动，三点设置',
       open: '查看更新',
       close: '关闭',
       checkNow: '重新检查',
@@ -111,13 +142,28 @@ window.__ModuleLoader__.load({
       noTokens: '不消耗 token',
       bypassed: '跳过 {count} 个（本地链接 / 非版本号）',
       dragHint: '拖动顶部移动，双击复位',
+      appearance: '面板设置',
+      appearanceHint: '调整大小、颜色与位置',
+      panelWidth: '宽度',
+      panelHeight: '最大高度',
+      accentColor: '强调色',
+      customColor: '自定义',
+      surfaceColor: '背景',
+      surfaceNavy: '深海军蓝',
+      surfaceGraphite: '石墨灰',
+      surfacePlum: '梅子紫',
+      surfaceForest: '森林绿',
+      opacity: '不透明度',
+      resetAppearance: '恢复默认',
+      resetPosition: '复位位置',
+      done: '完成',
       degraded: '部分内核能力缺失，已自动降级',
       available: '{count} 个可更新',
       upToDate: '全部最新',
     }
     const EN = {
       title: 'Updates',
-      subtitle: 'Plugins · Desktop · Core · drag the header to move',
+      subtitle: 'Plugins · Desktop · Core · drag to move, ··· for settings',
       open: 'View updates',
       close: 'Close',
       checkNow: 'Check again',
@@ -193,6 +239,21 @@ window.__ModuleLoader__.load({
       noTokens: 'no tokens spent',
       bypassed: '{count} skipped (local link / no version)',
       dragHint: 'Drag the header to move, double-click to reset',
+      appearance: 'Panel settings',
+      appearanceHint: 'Size, color and position',
+      panelWidth: 'Width',
+      panelHeight: 'Max height',
+      accentColor: 'Accent',
+      customColor: 'Custom',
+      surfaceColor: 'Surface',
+      surfaceNavy: 'Navy',
+      surfaceGraphite: 'Graphite',
+      surfacePlum: 'Plum',
+      surfaceForest: 'Forest',
+      opacity: 'Opacity',
+      resetAppearance: 'Reset',
+      resetPosition: 'Reset position',
+      done: 'Done',
       degraded: 'Some kernel capabilities are missing; degraded automatically',
       available: '{count} update(s)',
       upToDate: 'All current',
@@ -739,6 +800,51 @@ window.__ModuleLoader__.load({
       return Math.min(Math.max(value, min), Math.max(min, max))
     }
 
+    /** Convert a #rrggbb accent to the translucent tint used by the panel glow. */
+    function hexToRgba(value, alpha) {
+      const match = /^#([0-9a-f]{6})$/i.exec(typeof value === 'string' ? value.trim() : '')
+      if (match === null) return `rgba(107, 140, 255, ${alpha})`
+      const number = Number.parseInt(match[1], 16)
+      return `rgba(${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`
+    }
+
+    /** Keep a stored or user-edited appearance inside the supported bounds. */
+    function sanitizeAppearance(value) {
+      const input = value !== null && typeof value === 'object' ? value : {}
+      const width = Number(input.width)
+      const height = Number(input.height)
+      const opacity = Number(input.opacity)
+      const accent = typeof input.accent === 'string' && /^#[0-9a-f]{6}$/i.test(input.accent) ? input.accent : APPEARANCE_DEFAULT.accent
+      const accent2 = typeof input.accent2 === 'string' && /^#[0-9a-f]{6}$/i.test(input.accent2) ? input.accent2 : APPEARANCE_DEFAULT.accent2
+      const surface = Object.hasOwn(PANEL_SURFACES, input.surface) ? input.surface : APPEARANCE_DEFAULT.surface
+      return {
+        width: clamp(Number.isFinite(width) ? Math.round(width) : APPEARANCE_DEFAULT.width, APPEARANCE_LIMITS.width.min, APPEARANCE_LIMITS.width.max),
+        height: clamp(Number.isFinite(height) ? Math.round(height) : APPEARANCE_DEFAULT.height, APPEARANCE_LIMITS.height.min, APPEARANCE_LIMITS.height.max),
+        accent,
+        accent2,
+        surface,
+        opacity: clamp(Number.isFinite(opacity) ? opacity : APPEARANCE_DEFAULT.opacity, APPEARANCE_LIMITS.opacity.min, APPEARANCE_LIMITS.opacity.max),
+      }
+    }
+
+    function readAppearance() {
+      try {
+        const raw = globalThis.localStorage?.getItem(APPEARANCE_KEY)
+        if (typeof raw !== 'string' || raw.length === 0) return { ...APPEARANCE_DEFAULT }
+        return sanitizeAppearance(JSON.parse(raw))
+      } catch {
+        return { ...APPEARANCE_DEFAULT }
+      }
+    }
+
+    function writeAppearance(appearance) {
+      try {
+        globalThis.localStorage?.setItem(APPEARANCE_KEY, JSON.stringify(appearance))
+      } catch {
+        /* storage may be unavailable; the controls still work for this view */
+      }
+    }
+
     /** Pointer drag for the panel: header grabs, document tracks, edge clamps. */
     function useDrag(panelRef, anchorRef) {
       const [position, setPosition] = React.useState(readPosition)
@@ -766,7 +872,7 @@ window.__ModuleLoader__.load({
         const place = () => {
           const rect = anchorRef?.current?.getBoundingClientRect()
           const width = panelRef.current?.offsetWidth ?? PANEL_WIDTH
-          const height = Math.min(panelRef.current?.offsetHeight ?? 380, PANEL_MAX_HEIGHT)
+          const height = panelRef.current?.offsetHeight ?? 380
           const left = rect ? clamp(rect.right + 10, 8, window.innerWidth - width - 8) : 12
           const top = rect ? clamp(rect.top - Math.min(140, height / 3), 8, window.innerHeight - height - 8) : 96
           setPosition({ left, top })
@@ -781,7 +887,7 @@ window.__ModuleLoader__.load({
           setPosition((current) => {
             if (current === null) return current
             const width = panelRef.current?.offsetWidth ?? PANEL_WIDTH
-            const height = Math.min(panelRef.current?.offsetHeight ?? 380, PANEL_MAX_HEIGHT)
+            const height = panelRef.current?.offsetHeight ?? 380
             return {
               left: clamp(current.left, 8, window.innerWidth - width - 8),
               top: clamp(current.top, 8, window.innerHeight - height - 8),
@@ -818,7 +924,7 @@ window.__ModuleLoader__.load({
           left: rect.left,
           top: rect.top,
           width: panel.offsetWidth || PANEL_WIDTH,
-          height: Math.min(panel.offsetHeight || 380, PANEL_MAX_HEIGHT),
+          height: panel.offsetHeight || 380,
         }
         dragRef.current = start
         setDragging(true)
@@ -1171,12 +1277,177 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** The panel-properties popover opened by the three-dot header button. */
+    function AppearanceMenu({ t, appearance, onChange, onReset, onResetPosition, onClose, menuRef }) {
+      const tr = makeT(t)
+      const range = (key, label, limits) =>
+        h(
+          'div',
+          { style: styles.appearanceGroup },
+          h(
+            'div',
+            { style: styles.appearanceLabelRow },
+            h('span', { style: styles.appearanceLabel }, label),
+            h('span', { style: styles.appearanceValue }, `${appearance[key]}px`),
+          ),
+          h('input', {
+            type: 'range',
+            min: limits.min,
+            max: limits.max,
+            step: limits.step,
+            value: appearance[key],
+            'aria-label': label,
+            style: styles.appearanceRange,
+            onChange: (event) => onChange({ [key]: Number(event.target.value) }),
+          }),
+        )
+
+      return h(
+        'div',
+        {
+          className: 'dsh-updater-appearance',
+          ref: menuRef,
+          style: styles.appearanceMenu,
+          role: 'dialog',
+          'aria-label': tr('appearance'),
+          onPointerDown: (event) => event.stopPropagation(),
+          onDoubleClick: (event) => event.stopPropagation(),
+        },
+        h(
+          'div',
+          { style: styles.appearanceHead },
+          h(
+            'div',
+            { style: styles.appearanceTitle },
+            h('strong', { style: styles.appearanceTitleStrong }, tr('appearance')),
+            h('span', { style: styles.appearanceHint }, tr('appearanceHint')),
+          ),
+          h(
+            'button',
+            { type: 'button', style: styles.appearanceClose, title: tr('done'), 'aria-label': tr('done'), onClick: onClose },
+            '×',
+          ),
+        ),
+        range('width', tr('panelWidth'), APPEARANCE_LIMITS.width),
+        range('height', tr('panelHeight'), APPEARANCE_LIMITS.height),
+        h(
+          'div',
+          { style: styles.appearanceGroup },
+          h(
+            'div',
+            { style: styles.appearanceLabelRow },
+            h('span', { style: styles.appearanceLabel }, tr('accentColor')),
+            h('span', { style: styles.appearanceValue }, appearance.accent.toUpperCase()),
+          ),
+          h(
+            'div',
+            { style: styles.swatches },
+            PANEL_ACCENTS.map((preset) =>
+              h(
+                'button',
+                {
+                  key: preset.id,
+                  type: 'button',
+                  style: {
+                    ...styles.swatch,
+                    background: `linear-gradient(135deg, ${preset.accent}, ${preset.accent2})`,
+                    ...(appearance.accent === preset.accent ? styles.swatchSelected : null),
+                  },
+                  title: preset.id,
+                  'aria-label': preset.id,
+                  'aria-pressed': appearance.accent === preset.accent,
+                  onClick: () => onChange({ accent: preset.accent, accent2: preset.accent2 }),
+                },
+              ),
+            ),
+            h(
+              'label',
+              {
+                style: {
+                  ...styles.swatch,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  background: 'conic-gradient(from 210deg, #ff6b9a, #f5b544, #3ecf8e, #46c7f5, #6b8cff, #c86bff, #ff6b9a)',
+                },
+                title: tr('customColor'),
+              },
+              h('input', {
+                type: 'color',
+                value: appearance.accent,
+                'aria-label': tr('customColor'),
+                style: { position: 'absolute', inset: 0, width: '100%', height: '100%', padding: 0, border: 'none', opacity: 0, cursor: 'pointer' },
+                onChange: (event) => onChange({ accent: event.target.value, accent2: event.target.value }),
+              }),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { style: styles.appearanceGroup },
+          h('div', { style: styles.appearanceLabelRow }, h('span', { style: styles.appearanceLabel }, tr('surfaceColor'))),
+          h(
+            'div',
+            { style: styles.surfaceGrid },
+            Object.entries(PANEL_SURFACES).map(([id, surface]) =>
+              h(
+                'button',
+                {
+                  key: id,
+                  type: 'button',
+                  style: { ...styles.surfaceChip, ...(appearance.surface === id ? styles.surfaceChipSelected : null) },
+                  'aria-pressed': appearance.surface === id,
+                  onClick: () => onChange({ surface: id }),
+                },
+                h('span', { style: { ...styles.surfaceDot, background: `linear-gradient(135deg, ${surface.head}, ${surface.bg})` } }),
+                tr(`surface${id.charAt(0).toUpperCase()}${id.slice(1)}`),
+              ),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { style: styles.appearanceGroup },
+          h(
+            'div',
+            { style: styles.appearanceLabelRow },
+            h('span', { style: styles.appearanceLabel }, tr('opacity')),
+            h('span', { style: styles.appearanceValue }, `${Math.round(appearance.opacity * 100)}%`),
+          ),
+          h('input', {
+            type: 'range',
+            min: Math.round(APPEARANCE_LIMITS.opacity.min * 100),
+            max: 100,
+            step: Math.round(APPEARANCE_LIMITS.opacity.step * 100),
+            value: Math.round(appearance.opacity * 100),
+            'aria-label': tr('opacity'),
+            style: styles.appearanceRange,
+            onChange: (event) => onChange({ opacity: Number(event.target.value) / 100 }),
+          }),
+        ),
+        h(
+          'div',
+          { style: styles.appearanceFooter },
+          h('button', { type: 'button', style: styles.appearanceGhost, onClick: onReset }, tr('resetAppearance')),
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '4px' } },
+            h('button', { type: 'button', style: styles.appearanceGhost, onClick: onResetPosition }, tr('resetPosition')),
+            h('button', { type: 'button', style: styles.appearanceDone, onClick: onClose }, tr('done')),
+          ),
+        ),
+      )
+    }
+
     /** The draggable updater panel. */
     function UpdaterPanel({ t, anchorRef, onClose }) {
       const tr = makeT(t)
       const state = useUpdaterState()
       const panelRef = React.useRef(null)
+      const menuRef = React.useRef(null)
+      const menuButtonRef = React.useRef(null)
       const { position, dragging, startDrag, reset } = useDrag(panelRef, anchorRef ?? null)
+      const [appearance, setAppearance] = React.useState(readAppearance)
+      const [menuOpen, setMenuOpen] = React.useState(false)
       const report = state.report
       const pluginUpdates = updateEntries(report)
       const bypassed = (report?.packages ?? []).filter((entry) => entry.name !== PACKAGE && entryState(entry) === 'bypassed')
@@ -1196,18 +1467,66 @@ window.__ModuleLoader__.load({
             })
           : `${state.updateName ?? ''} · ${stageLabel}`
 
-      const panelStyle = position === null
-        ? { ...styles.panel, left: '12px', bottom: '96px' }
-        : { ...styles.panel, left: `${position.left}px`, top: `${position.top}px` }
+      const surface = PANEL_SURFACES[appearance.surface] ?? PANEL_SURFACES.navy
+      const panelStyle = {
+        ...styles.panel,
+        ...(position === null ? { left: '12px', bottom: '96px' } : { left: `${position.left}px`, top: `${position.top}px` }),
+        width: position === null
+          ? `min(${appearance.width}px, calc(100vw - 24px))`
+          : `min(${appearance.width}px, calc(100vw - ${Math.max(12, position.left)}px - 8px))`,
+        maxHeight: position === null
+          ? `min(${appearance.height}px, calc(100vh - 120px))`
+          : `min(${appearance.height}px, calc(100vh - ${Math.max(12, position.top)}px - 8px))`,
+        opacity: appearance.opacity,
+        '--upd-bg': surface.bg,
+        '--upd-head': surface.head,
+        '--upd-row': surface.row,
+        '--upd-row-hover': surface.rowHover,
+        '--upd-border': surface.border,
+        '--upd-border-strong': surface.borderStrong,
+        '--upd-accent': appearance.accent,
+        '--upd-accent-2': appearance.accent2,
+        '--upd-glow': hexToRgba(appearance.accent, 0.16),
+        '--upd-shadow': hexToRgba(appearance.accent, 0.35),
+        '--upd-shadow-ring': hexToRgba(appearance.accent, 0.18),
+        '--upd-shadow-soft': hexToRgba(appearance.accent, 0.25),
+      }
 
-      /** Escape closes the panel; the sidebar entry stays as the way back in. */
+      const changeAppearance = (patch) => {
+        setAppearance((current) => {
+          const next = sanitizeAppearance({ ...current, ...patch })
+          writeAppearance(next)
+          return next
+        })
+      }
+      const resetAppearance = () => {
+        const next = { ...APPEARANCE_DEFAULT }
+        writeAppearance(next)
+        setAppearance(next)
+      }
+
+      /** Escape closes the popover first, then the panel; the sidebar stays as the way back in. */
       React.useEffect(() => {
         const onKeyDown = (event) => {
-          if (event.key === 'Escape') onClose()
+          if (event.key !== 'Escape') return
+          if (menuOpen) setMenuOpen(false)
+          else onClose()
         }
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
-      }, [onClose])
+      }, [onClose, menuOpen])
+
+      /** A click outside the popover and its trigger dismisses it. */
+      React.useEffect(() => {
+        if (!menuOpen) return undefined
+        const onPointerDown = (event) => {
+          if (menuRef.current?.contains(event.target) === true) return
+          if (menuButtonRef.current?.contains(event.target) === true) return
+          setMenuOpen(false)
+        }
+        document.addEventListener('pointerdown', onPointerDown)
+        return () => document.removeEventListener('pointerdown', onPointerDown)
+      }, [menuOpen])
 
       const aside = h(
         'div',
@@ -1234,11 +1553,12 @@ window.__ModuleLoader__.load({
         { className: 'dsh-updater-panel', ref: panelRef, style: panelStyle, role: 'dialog', 'aria-label': tr('title') },
         h('style', null, `
           .dsh-updater-panel * { box-sizing: border-box; }
-          .dsh-updater-panel .dsh-updater-row:hover { background: #232a39; }
-          .dsh-updater-panel .dsh-updater-close:hover { background: #232a39; color: #eef2f9; }
+          .dsh-updater-panel .dsh-updater-row:hover { background: var(--upd-row-hover, #232a39); }
+          .dsh-updater-panel .dsh-updater-close:hover,
+          .dsh-updater-panel .dsh-updater-menu-button:hover { background: var(--upd-row-hover, #232a39); color: var(--upd-text, #eef2f9); }
           .dsh-updater-panel button:hover:not(:disabled) { filter: brightness(1.04); }
           .dsh-updater-panel button:disabled { cursor: default; opacity: .55; }
-          .dsh-updater-panel button:focus-visible { outline: 2px solid #6b8cff; outline-offset: 1px; }
+          .dsh-updater-panel button:focus-visible { outline: 2px solid var(--upd-accent, #6b8cff); outline-offset: 1px; }
           .dsh-updater-spin { animation: dsh-updater-spin .9s linear infinite; }
           @keyframes dsh-updater-spin { to { transform: rotate(360deg); } }
           .dsh-updater-progress-fill { position: relative; overflow: hidden; }
@@ -1259,7 +1579,7 @@ window.__ModuleLoader__.load({
             .dsh-updater-spin { animation: none; }
           }
           .dsh-updater-panel ::-webkit-scrollbar { width: 8px; height: 8px; }
-          .dsh-updater-panel ::-webkit-scrollbar-thumb { background: #3a4356; border-radius: 8px; }
+          .dsh-updater-panel ::-webkit-scrollbar-thumb { background: var(--upd-border-strong, #3a4356); border-radius: 8px; }
         `),
         h(
           'header',
@@ -1280,7 +1600,26 @@ window.__ModuleLoader__.load({
             ),
             h('span', { style: styles.subtitle }, tr('subtitle')),
           ),
-          h('span', { style: styles.grip, 'aria-hidden': true }, '•••'),
+          h(
+            'button',
+            {
+              ref: menuButtonRef,
+              type: 'button',
+              className: 'dsh-updater-menu-button',
+              style: { ...styles.menuButton, ...(menuOpen ? styles.menuButtonOpen : null) },
+              title: tr('appearance'),
+              'aria-label': tr('appearance'),
+              'aria-haspopup': 'dialog',
+              'aria-expanded': menuOpen,
+              onPointerDown: (event) => event.stopPropagation(),
+              onDoubleClick: (event) => event.stopPropagation(),
+              onClick: (event) => {
+                event.stopPropagation()
+                setMenuOpen((current) => !current)
+              },
+            },
+            '•••',
+          ),
           h(
             'button',
             {
@@ -1298,6 +1637,18 @@ window.__ModuleLoader__.load({
             '×',
           ),
         ),
+        menuOpen ? h('div', { style: styles.appearanceBackdrop, onPointerDown: () => setMenuOpen(false) }) : null,
+        menuOpen
+          ? h(AppearanceMenu, {
+              t: tr,
+              appearance,
+              onChange: changeAppearance,
+              onReset: resetAppearance,
+              onResetPosition: reset,
+              onClose: () => setMenuOpen(false),
+              menuRef,
+            })
+          : null,
         updating
           ? h(
               'div',
@@ -1474,17 +1825,17 @@ window.__ModuleLoader__.load({
      * token and turns the panel pale gray on light profiles.
      */
     const PANEL_PALETTE = {
-      bg: '#151923',
-      head: '#1a1f2b',
-      row: '#1e2431',
-      rowHover: '#232a39',
-      border: '#2a3140',
-      borderStrong: '#3a4356',
-      text: '#eef2f9',
-      muted: '#98a3b6',
-      faint: '#7d879a',
-      brand: '#6b8cff',
-      accent: '#8f6bff',
+      bg: 'var(--upd-bg, #151923)',
+      head: 'var(--upd-head, #1a1f2b)',
+      row: 'var(--upd-row, #1e2431)',
+      rowHover: 'var(--upd-row-hover, #232a39)',
+      border: 'var(--upd-border, #2a3140)',
+      borderStrong: 'var(--upd-border-strong, #3a4356)',
+      text: 'var(--upd-text, #eef2f9)',
+      muted: 'var(--upd-muted, #98a3b6)',
+      faint: 'var(--upd-faint, #7d879a)',
+      brand: 'var(--upd-accent, #6b8cff)',
+      accent: 'var(--upd-accent-2, #8f6bff)',
       green: '#3ecf8e',
       amber: '#f5b544',
       red: '#ff6b6b',
@@ -1498,7 +1849,7 @@ window.__ModuleLoader__.load({
         flexDirection: 'column',
         pointerEvents: 'auto',
         background: PANEL_PALETTE.bg,
-        backgroundImage: 'radial-gradient(120% 80% at 100% 0%, rgba(107, 140, 255, 0.14), transparent 62%)',
+        backgroundImage: 'radial-gradient(120% 80% at 100% 0%, var(--upd-glow, rgba(107, 140, 255, 0.14)), transparent 62%)',
         color: PANEL_PALETTE.text,
         border: `1px solid ${PANEL_PALETTE.border}`,
         borderRadius: '16px',
@@ -1518,7 +1869,115 @@ window.__ModuleLoader__.load({
         touchAction: 'none',
         userSelect: 'none',
       },
-      grip: { color: PANEL_PALETTE.muted, fontSize: '10px', letterSpacing: '2px', lineHeight: 1, opacity: 0.8, flex: 'none' },
+      menuButton: {
+        ...buttonBase,
+        width: '26px',
+        height: '24px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+        background: 'transparent',
+        color: PANEL_PALETTE.muted,
+        fontSize: '12px',
+        letterSpacing: '1.5px',
+        lineHeight: 1,
+        flex: 'none',
+      },
+      menuButtonOpen: { background: PANEL_PALETTE.row, color: PANEL_PALETTE.text },
+      appearanceBackdrop: {
+        position: 'absolute',
+        inset: '54px 0 0',
+        background: 'rgba(4, 6, 10, 0.58)',
+        zIndex: 4,
+      },
+      appearanceMenu: {
+        position: 'absolute',
+        top: '54px',
+        right: '10px',
+        bottom: '10px',
+        width: 'calc(100% - 20px)',
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '11px',
+        padding: '12px',
+        background: PANEL_PALETTE.head,
+        border: `1px solid ${PANEL_PALETTE.borderStrong}`,
+        borderRadius: '12px',
+        boxShadow: '0 18px 50px rgba(0, 0, 0, 0.5)',
+        zIndex: 5,
+      },
+      appearanceHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' },
+      appearanceTitle: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
+      appearanceTitleStrong: { fontSize: '12.5px', fontWeight: 700, color: PANEL_PALETTE.text },
+      appearanceHint: { fontSize: '10px', color: PANEL_PALETTE.muted },
+      appearanceClose: {
+        ...buttonBase,
+        width: '20px',
+        height: '20px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+        background: 'transparent',
+        color: PANEL_PALETTE.muted,
+        fontSize: '14px',
+        lineHeight: 1,
+      },
+      appearanceGroup: { display: 'flex', flexDirection: 'column', gap: '5px' },
+      appearanceLabelRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' },
+      appearanceLabel: { fontSize: '10.5px', color: PANEL_PALETTE.muted, fontWeight: 600 },
+      appearanceValue: { fontSize: '10.5px', color: PANEL_PALETTE.text, fontVariantNumeric: 'tabular-nums' },
+      appearanceRange: { width: '100%', accentColor: PANEL_PALETTE.brand, cursor: 'pointer', margin: '1px 0' },
+      swatches: { display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' },
+      swatch: {
+        ...buttonBase,
+        width: '22px',
+        height: '22px',
+        padding: 0,
+        borderRadius: '999px',
+        border: '2px solid transparent',
+        cursor: 'pointer',
+        flex: 'none',
+      },
+      swatchSelected: { boxShadow: `0 0 0 2px ${PANEL_PALETTE.head}, 0 0 0 4px ${PANEL_PALETTE.text}` },
+      surfaceGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' },
+      surfaceChip: {
+        ...buttonBase,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '6px 7px',
+        borderRadius: '8px',
+        border: `1px solid ${PANEL_PALETTE.border}`,
+        background: PANEL_PALETTE.row,
+        color: PANEL_PALETTE.text,
+        fontSize: '10.5px',
+        textAlign: 'left',
+        cursor: 'pointer',
+      },
+      surfaceChipSelected: { borderColor: PANEL_PALETTE.brand, boxShadow: `inset 0 0 0 1px ${PANEL_PALETTE.brand}` },
+      surfaceDot: { width: '12px', height: '12px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.14)', flex: 'none' },
+      appearanceFooter: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', paddingTop: '2px', marginTop: 'auto', flexWrap: 'wrap' },
+      appearanceGhost: {
+        ...buttonBase,
+        padding: '5px 8px',
+        fontSize: '10.5px',
+        background: 'transparent',
+        borderColor: 'transparent',
+        color: PANEL_PALETTE.muted,
+      },
+      appearanceDone: {
+        ...buttonBase,
+        padding: '5px 10px',
+        fontSize: '10.5px',
+        fontWeight: 600,
+        borderRadius: '7px',
+        background: `linear-gradient(135deg, ${PANEL_PALETTE.brand}, ${PANEL_PALETTE.accent})`,
+        borderColor: 'transparent',
+        color: '#fff',
+      },
       titleBlock: { display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0, flex: 1 },
       titleRow: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 },
       mark: {
@@ -1533,7 +1992,7 @@ window.__ModuleLoader__.load({
         fontSize: '13px',
         lineHeight: 1,
         flex: 'none',
-        boxShadow: '0 6px 16px rgba(107, 140, 255, 0.35)',
+        boxShadow: '0 6px 16px var(--upd-shadow, rgba(107, 140, 255, 0.35))',
       },
       title: { fontSize: '13.5px', fontWeight: 650, whiteSpace: 'nowrap', color: PANEL_PALETTE.text },
       subtitle: { fontSize: '10.5px', color: PANEL_PALETTE.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -1651,7 +2110,7 @@ window.__ModuleLoader__.load({
         borderRadius: '999px',
         flex: 'none',
         background: PANEL_PALETTE.brand,
-        boxShadow: '0 0 0 3px rgba(107, 140, 255, 0.18)',
+        boxShadow: '0 0 0 3px var(--upd-shadow-ring, rgba(107, 140, 255, 0.18))',
       },
       rowDotQueued: {
         width: '7px',
@@ -1784,7 +2243,7 @@ window.__ModuleLoader__.load({
         color: PANEL_PALETTE.muted,
         fontVariantNumeric: 'tabular-nums',
       },
-      progressTrack: { height: '6px', borderRadius: '999px', background: '#252c3a', overflow: 'hidden' },
+      progressTrack: { height: '6px', borderRadius: '999px', background: 'var(--upd-border, #252c3a)', overflow: 'hidden' },
       progressFill: {
         height: '100%',
         borderRadius: '999px',
@@ -1805,7 +2264,7 @@ window.__ModuleLoader__.load({
         width: '16px',
         height: '16px',
         borderRadius: '999px',
-        border: '2px solid #323b4d',
+        border: '2px solid var(--upd-border-strong, #323b4d)',
         borderTopColor: PANEL_PALETTE.brand,
         display: 'inline-block',
       },
@@ -1838,7 +2297,7 @@ window.__ModuleLoader__.load({
         background: `linear-gradient(135deg, ${PANEL_PALETTE.brand}, ${PANEL_PALETTE.accent})`,
         borderColor: 'transparent',
         color: '#fff',
-        boxShadow: '0 6px 14px rgba(107, 140, 255, 0.25)',
+        boxShadow: '0 6px 14px var(--upd-shadow-soft, rgba(107, 140, 255, 0.25))',
       },
       rowCta: {
         ...buttonBase,

@@ -110,6 +110,11 @@ ctx.provide('desktopRuntime', {
 ctx.provide('logger', { info: (...args) => console.log('  log:', ...args) })
 
 const service = new UpdaterService(ctx, { verbose: true })
+/** Keep the mock update trace out of the real <DSH_HOME>/plugin-updater log. */
+const selfcheckData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-updater-check-'))
+service.dataDir = selfcheckData
+service.lastReportFile = path.join(selfcheckData, 'last-report.json')
+service.ignoredFile = path.join(selfcheckData, 'ignored.json')
 console.log('service key:', service.name, '| profileDir:', service.profileDir(), '| dataDir:', service.dataDir)
 console.log('typertRemote:', JSON.stringify({ serviceKey: service.typertRemote.serviceKey, namespace: service.typertRemote.namespace }))
 console.log('compat:', JSON.stringify(service.compat()))
@@ -208,6 +213,10 @@ ctx2.provide('pluginManager', {
   },
 })
 const failing = new UpdaterService(ctx2, {})
+const failingData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-updater-fail-'))
+failing.dataDir = failingData
+failing.lastReportFile = path.join(failingData, 'last-report.json')
+failing.ignoredFile = path.join(failingData, 'ignored.json')
 const failedUpdate = await failing.update('dsh-ops', '99.99.99')
 console.log('failed update result:', JSON.stringify(failedUpdate), 'restore calls:', JSON.stringify(restoreCalls))
 if (failedUpdate.ok !== false) failures.push('failed update reported success')
@@ -217,6 +226,102 @@ if (!restoreCalls.some((spec) => spec === `dsh-ops@${installedVersion}`)) failur
 const updateSource = UpdaterService.prototype.update.toString()
 if (!updateSource.includes('removeBundle')) failures.push('update no longer removes before installing')
 if (!updateSource.includes('restoreInstall')) failures.push('update has no restore path')
+
+/**
+ * DSH NEXT refuses to unload a running host bundle. The service must retry
+ * through installBundle without leaving the bundle deselected, and must roll
+ * back cleanly when the replacement fails.
+ */
+function makeTempProfile() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-updater-profile-'))
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+    name: 'dsh-profile-test',
+    private: true,
+    dependencies: { 'dsh-ops': '0.4.3' },
+    dsh: { profile: { bundles: ['dsh-ops'] } },
+  }, null, 2) + '\n')
+  fs.mkdirSync(path.join(dir, 'node_modules', 'dsh-ops'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'node_modules', 'dsh-ops', 'package.json'), JSON.stringify({ name: 'dsh-ops', version: '0.4.3' }))
+  return dir
+}
+function tempManifest(dir) {
+  return JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'))
+}
+function tempManager(dir, behavior) {
+  const calls = []
+  const manager = {
+    calls,
+    removeBundle: async (name) => {
+      calls.push({ op: 'remove', name })
+      const manifest = tempManifest(dir)
+      manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter((item) => item !== name)
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
+      return { changed: true, application: 'failed', stage: 'remove', target: name, error: { code: behavior.removeCode } }
+    },
+    setBundleEnabled: async (name, enabled) => {
+      calls.push({ op: 'select', name, enabled })
+      const manifest = tempManifest(dir)
+      manifest.dsh.profile.bundles = enabled ? [...manifest.dsh.profile.bundles, name] : manifest.dsh.profile.bundles.filter((item) => item !== name)
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
+      return { changed: true, application: 'applied', stage: 'enable', target: name, enabled }
+    },
+    installBundle: async (spec, options) => {
+      const manifest = tempManifest(dir)
+      calls.push({ op: 'install', spec, requestId: options?.requestId ?? null, dependencyPresent: Object.hasOwn(manifest.dependencies, 'dsh-ops') })
+      if (behavior.installFails !== undefined && spec.endsWith('@0.4.4')) throw new Error(behavior.installFails)
+      if (spec.endsWith('@0.4.4')) {
+        manifest.dependencies['dsh-ops'] = '0.4.4'
+        fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
+        return { changed: true, application: 'restart-required', restartReason: 'host-module', stage: 'install', target: spec }
+      }
+      manifest.dependencies['dsh-ops'] = '0.4.3'
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
+      return { changed: true, application: 'applied', stage: 'install', target: spec }
+    },
+  }
+  const context = new Context()
+  context.provide('profileContext', { name: path.basename(dir), dir, home: path.dirname(dir) })
+  context.provide('pluginManager', manager)
+  return { manager, context }
+}
+
+const runningDir = makeTempProfile()
+const running = tempManager(runningDir, { removeCode: 'bundle-in-use' })
+const runningService = new UpdaterService(running.context, { verbose: true, profileDir: runningDir })
+const runningResult = await runningService.update('dsh-ops', '0.4.4', 'req-overwrite')
+console.log('bundle-in-use update:', JSON.stringify(runningResult))
+console.log('bundle-in-use calls:', JSON.stringify(running.manager.calls))
+if (runningResult.ok !== true) failures.push(`bundle-in-use update failed: ${runningResult.error}`)
+if (runningResult.fallback !== 'overwrite-running') failures.push('bundle-in-use update did not use the overwrite fallback')
+if (runningResult.application !== 'restart-required') failures.push('bundle-in-use update did not ask for a restart')
+if (running.manager.calls.some((call) => call.op === 'install' && call.dependencyPresent === true)) failures.push('overwrite fallback did not hide the existing dependency')
+if (tempManifest(runningDir).dependencies['dsh-ops'] !== '0.4.4') failures.push('overwrite fallback left the wrong dependency version')
+if (!tempManifest(runningDir).dsh.profile.bundles.includes('dsh-ops')) failures.push('overwrite fallback left the bundle deselected')
+if (!running.manager.calls.some((call) => call.op === 'select' && call.enabled === true)) failures.push('overwrite fallback did not restore the bundle selection through the manager')
+fs.rmSync(runningDir, { recursive: true, force: true })
+
+const rollbackDir = makeTempProfile()
+const rollback = tempManager(rollbackDir, { removeCode: 'bundle-in-use', installFails: 'disk-full' })
+const rollbackService = new UpdaterService(rollback.context, { verbose: true, profileDir: rollbackDir })
+const rollbackResult = await rollbackService.update('dsh-ops', '0.4.4', 'req-rollback')
+console.log('overwrite rollback:', JSON.stringify(rollbackResult), 'calls:', JSON.stringify(rollback.manager.calls))
+if (rollbackResult.ok !== false) failures.push('failed overwrite reported success')
+if (rollbackResult.restored !== true) failures.push('failed overwrite did not restore the previous version')
+if (rollbackResult.stage !== 'install') failures.push('failed overwrite reported the wrong stage')
+if (tempManifest(rollbackDir).dependencies['dsh-ops'] !== '0.4.3') failures.push('failed overwrite did not restore the original dependency spec')
+if (!tempManifest(rollbackDir).dsh.profile.bundles.includes('dsh-ops')) failures.push('failed overwrite left the bundle deselected')
+fs.rmSync(rollbackDir, { recursive: true, force: true })
+
+const stoppedDir = makeTempProfile()
+const stopped = tempManager(stoppedDir, { removeCode: 'stop-profile' })
+const stoppedService = new UpdaterService(stopped.context, { verbose: true, profileDir: stoppedDir })
+const stoppedResult = await stoppedService.update('dsh-ops', '0.4.4', 'req-stop')
+console.log('stop-profile update:', JSON.stringify(stoppedResult), 'calls:', JSON.stringify(stopped.manager.calls))
+if (stoppedResult.ok !== true) failures.push(`stop-profile update failed: ${stoppedResult.error}`)
+if (stoppedResult.fallback !== 'install-over') failures.push('stop-profile update did not install over the running bundle')
+if (stopped.manager.calls.some((call) => call.op === 'install' && call.dependencyPresent === false)) failures.push('stop-profile update hid a dependency it did not need to hide')
+if (tempManifest(stoppedDir).dependencies['dsh-ops'] !== '0.4.4') failures.push('stop-profile update left the wrong dependency version')
+fs.rmSync(stoppedDir, { recursive: true, force: true })
 
 /** Static contract checks on the Client half. */
 const clientPath = process.argv[3] ?? './client.js'
@@ -237,7 +342,18 @@ if (!client.includes("plugin-manager/install-log")) failures.push('client does n
 if (!client.includes('markUpdated')) failures.push('client does not hide updated rows immediately')
 if (!client.includes("credentials: 'same-origin'")) failures.push('client desktop update request does not carry the browser session')
 if (!/inject: \['slots', 'locale'\]/.test(client)) failures.push('client dependencies changed unexpectedly')
+if (!updateSource.includes('bundle-in-use')) failures.push('update does not handle bundle-in-use')
+if (!updateSource.includes('installOverRunning')) failures.push('update has no overwrite fallback')
+if (!updateSource.includes('restoreBundleSelection')) failures.push('update does not restore a deselected bundle')
+if (!client.includes('APPEARANCE_KEY')) failures.push('client does not remember panel appearance')
+if (!client.includes('dsh-updater-menu-button')) failures.push('client has no three-dot panel settings button')
+if (!client.includes('appearanceMenu')) failures.push('client has no panel appearance popover')
+if (!client.includes('--upd-accent')) failures.push('client does not theme the accent color')
+if (!client.includes('panelWidth')) failures.push('client has no panel width control')
+if (!client.includes('surfaceColor')) failures.push('client has no panel surface control')
 
+fs.rmSync(selfcheckData, { recursive: true, force: true })
+fs.rmSync(failingData, { recursive: true, force: true })
 if (failures.length > 0) {
   console.error('FAILURES:', failures.join(' | '))
   process.exitCode = 1

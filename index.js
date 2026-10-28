@@ -420,6 +420,54 @@ function readProfileManifest(dir) {
   return { file, parsed: JSON.parse(fs.readFileSync(file, 'utf8')) }
 }
 
+/** Write text beside a target and rename it into place. */
+function writeTextAtomic(file, text) {
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`
+  try {
+    fs.writeFileSync(temporary, text, 'utf8')
+    fs.renameSync(temporary, file)
+  } catch (error) {
+    try {
+      fs.unlinkSync(temporary)
+    } catch {
+      /* the temporary file may not exist */
+    }
+    throw error
+  }
+}
+
+/** Write the profile manifest atomically, keeping its two-space JSON shape. */
+function writeProfileManifest(file, parsed) {
+  writeTextAtomic(file, `${JSON.stringify(parsed, null, 2)}\n`)
+}
+
+/** Whether a profile's bundle selection currently includes a package. */
+function bundleSelected(dir, name) {
+  try {
+    const bundles = readProfileManifest(dir).parsed?.dsh?.profile?.bundles
+    return Array.isArray(bundles) && bundles.includes(name)
+  } catch {
+    return false
+  }
+}
+
+/** Add or remove one bundle selection, preserving every other manifest field. */
+function setBundleSelected(dir, name, selected) {
+  const manifest = readProfileManifest(dir)
+  const current = Array.isArray(manifest.parsed?.dsh?.profile?.bundles) ? manifest.parsed.dsh.profile.bundles : []
+  if (selected === current.includes(name)) return false
+  const bundles = selected ? [...current, name] : current.filter((item) => item !== name)
+  manifest.parsed.dsh = {
+    ...manifest.parsed.dsh,
+    profile: {
+      ...manifest.parsed.dsh?.profile,
+      bundles,
+    },
+  }
+  writeProfileManifest(manifest.file, manifest.parsed)
+  return true
+}
+
 /**
  * Where a DSH NEXT runtime records the desktop version it was built for.
  * The Host process itself is `primary-runtime/dependencies/node/bin/node.exe`,
@@ -1048,14 +1096,17 @@ export class UpdaterService extends Service {
     const packageDir = profileDir === null ? null : path.join(profileDir, 'node_modules', name)
     const previousVersion = packageDir === null ? null : readInstalledVersion(packageDir)
     let originalSpec = null
+    let wasSelected = false
     if (profileDir !== null) {
       try {
-        originalSpec = readProfileManifest(profileDir).parsed?.dependencies?.[name] ?? null
+        const manifest = readProfileManifest(profileDir).parsed
+        originalSpec = manifest?.dependencies?.[name] ?? null
+        wasSelected = Array.isArray(manifest?.dsh?.profile?.bundles) && manifest.dsh.profile.bundles.includes(name)
       } catch {
         originalSpec = null
       }
     }
-    this.trace('update:start', { name, version, target, requestId: requestId ?? null, previousVersion, originalSpec })
+    this.trace('update:start', { name, version, target, requestId: requestId ?? null, previousVersion, originalSpec, wasSelected })
 
     let removed
     try {
@@ -1063,17 +1114,36 @@ export class UpdaterService extends Service {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.trace('update:remove-threw', { name, message })
+      if (/bundle-in-use|stop-profile/.test(message)) {
+        const selection = await this.restoreBundleSelection(manager, name, wasSelected)
+        const code = /stop-profile/.test(message) ? 'stop-profile' : 'bundle-in-use'
+        this.trace('update:fallback-start', { name, code, wasSelected, selection, thrown: true })
+        return this.installOverRunning(manager, name, version, target, requestId, previousVersion, originalSpec, code, wasSelected)
+      }
       return { ok: false, name, version: version ?? null, spec: target, stage: 'remove', application: 'failed', error: message, restored: false }
     }
     const removedOk = removed?.application === 'applied' || removed?.application === 'restart-required'
     if (!removedOk) {
+      const code = typeof removed?.error?.code === 'string' ? removed.error.code : null
       const message =
         typeof removed?.error?.diagnostic === 'string'
           ? removed.error.diagnostic
-          : typeof removed?.error?.code === 'string'
-            ? removed.error.code
+          : typeof code === 'string'
+            ? code
             : `could not remove the installed version (${removed?.application ?? 'failed'})`
-      this.trace('update:remove-failed', { name, application: removed?.application ?? null, message })
+      this.trace('update:remove-failed', { name, application: removed?.application ?? null, code, message })
+      /**
+       * DSH NEXT can refuse to unload a running host bundle ("bundle-in-use")
+       * or ask for a restart when HMR is off ("stop-profile"). Removing first is
+       * impossible there, but both are still legitimate updates: the plugin
+       * manager's own install path can replace the files and report
+       * `restart-required`. Never leave the bundle deselected on this path.
+       */
+      if (code === 'bundle-in-use' || code === 'stop-profile' || /bundle-in-use|stop-profile/.test(message)) {
+        const selection = await this.restoreBundleSelection(manager, name, wasSelected)
+        this.trace('update:fallback-start', { name, code, wasSelected, selection })
+        return this.installOverRunning(manager, name, version, target, requestId, previousVersion, originalSpec, code ?? 'bundle-in-use', wasSelected)
+      }
       return {
         ok: false,
         name,
@@ -1131,6 +1201,143 @@ export class UpdaterService extends Service {
       pendingBuilds: Array.isArray(result?.pendingBuilds) ? result.pendingBuilds : [],
       restored: false,
     }
+  }
+
+  /**
+   * Replace a running bundle when `removeBundle` refused to unload it.
+   *
+   * With HMR, `installBundle` refuses an already-declared package name before
+   * pnpm runs. Hiding the dependency for the duration of that call lets the
+   * manager run its normal pnpm + reconcile path; pnpm writes the dependency
+   * back on success. The original manifest text is restored on any failure, and
+   * the previous version is reinstalled while the dependency is still hidden.
+   */
+  async installOverRunning(manager, name, version, target, requestId, previousVersion, originalSpec, code, wasSelected) {
+    const profileDir = this.profileDir()
+    const manifestFile = profileDir === null ? null : path.join(profileDir, 'package.json')
+    let hidden = null
+    if (manifestFile !== null && code === 'bundle-in-use') {
+      try {
+        const text = fs.readFileSync(manifestFile, 'utf8')
+        const parsed = JSON.parse(text)
+        if (parsed?.dependencies !== undefined && Object.hasOwn(parsed.dependencies, name)) {
+          hidden = text
+          delete parsed.dependencies[name]
+          writeProfileManifest(manifestFile, parsed)
+          this.trace('update:dependency-hidden', { name })
+        }
+      } catch (error) {
+        hidden = null
+        this.trace('update:dependency-hide-failed', { name, message: error instanceof Error ? error.message : String(error) })
+      }
+    }
+
+    const options = { enabled: true }
+    if (typeof requestId === 'string' && requestId.length > 0) options.requestId = requestId
+    if (typeof version === 'string' && version.length > 0) options.saveExact = true
+
+    let result = null
+    let thrown = null
+    try {
+      result = await manager.installBundle(target, options)
+    } catch (error) {
+      thrown = error
+    }
+    const installed = result?.application === 'applied' || result?.application === 'restart-required'
+    if (installed) {
+      this.trace('update:overwrite-installed', { name, target, application: result.application, code })
+      if (manifestFile !== null) {
+        try {
+          const parsed = readProfileManifest(profileDir).parsed
+          if (parsed?.dependencies?.[name] === undefined) {
+            parsed.dependencies = {
+              ...parsed.dependencies,
+              [name]: typeof version === 'string' && version.length > 0 ? version : originalSpec ?? target,
+            }
+            writeProfileManifest(manifestFile, parsed)
+            this.trace('update:dependency-restored', { name })
+          }
+        } catch (error) {
+          this.trace('update:dependency-verify-failed', { name, message: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      return {
+        ok: true,
+        name,
+        version: typeof version === 'string' ? version : null,
+        spec: target,
+        changed: result?.changed === true,
+        application: result.application,
+        restartReason: result?.restartReason ?? (result.application === 'restart-required' && code === 'bundle-in-use' ? 'host-module' : undefined),
+        warnings: Array.isArray(result?.warnings) ? result.warnings : [],
+        error: null,
+        pendingBuilds: Array.isArray(result?.pendingBuilds) ? result.pendingBuilds : [],
+        restored: false,
+        fallback: code === 'bundle-in-use' ? 'overwrite-running' : 'install-over',
+      }
+    }
+
+    const message = thrown !== null
+      ? thrown instanceof Error ? thrown.message : String(thrown)
+      : typeof result?.error?.diagnostic === 'string'
+        ? result.error.diagnostic
+        : typeof result?.error?.code === 'string'
+          ? result.error.code
+          : `install ${result?.application ?? 'failed'}`
+    /** Roll back while the dependency is still hidden, so the exact previous version can be installed. */
+    const restored = await this.restoreInstall(manager, name, previousVersion, originalSpec)
+    if (hidden !== null && manifestFile !== null) {
+      try {
+        writeTextAtomic(manifestFile, hidden)
+        this.trace('update:dependency-restored-text', { name })
+      } catch (error) {
+        this.trace('update:dependency-restore-text-failed', { name, message: error instanceof Error ? error.message : String(error) })
+      }
+    }
+    const selection = await this.restoreBundleSelection(manager, name, wasSelected)
+    this.trace('update:overwrite-failed', { name, target, code, message, restored, selection })
+    return {
+      ok: false,
+      name,
+      version: version ?? null,
+      spec: target,
+      stage: 'install',
+      application: typeof result?.application === 'string' ? result.application : 'failed',
+      error: message,
+      pendingBuilds: Array.isArray(result?.pendingBuilds) ? result.pendingBuilds : [],
+      restored,
+      fallback: code === 'bundle-in-use' ? 'overwrite-running' : 'install-over',
+    }
+  }
+
+  /**
+   * Put a bundle back into the profile selection after a removal attempt
+   * deselected it but could not unload it. `setBundleEnabled` is the official
+   * path; the direct manifest edit is the safety net for older managers.
+   */
+  async restoreBundleSelection(manager, name, shouldBeSelected) {
+    if (shouldBeSelected !== true) return { restored: false, reason: 'not-selected-before' }
+    const profileDir = this.profileDir()
+    if (profileDir !== null && bundleSelected(profileDir, name)) return { restored: true, via: 'manifest' }
+    try {
+      if (typeof manager?.setBundleEnabled === 'function') {
+        const result = await manager.setBundleEnabled(name, true)
+        if (result?.application === 'applied' || result?.application === 'restart-required') {
+          return { restored: true, via: 'manager' }
+        }
+      }
+    } catch (error) {
+      this.trace('update:selection-restore-threw', { name, message: error instanceof Error ? error.message : String(error) })
+    }
+    if (profileDir !== null) {
+      try {
+        if (setBundleSelected(profileDir, name, true)) return { restored: true, via: 'manifest-write' }
+        return { restored: true, via: 'manifest' }
+      } catch (error) {
+        this.trace('update:selection-write-failed', { name, message: error instanceof Error ? error.message : String(error) })
+      }
+    }
+    return { restored: false }
   }
 
   /** Reinstall the previous version (exact first, then the original spec) after a failed update. */
