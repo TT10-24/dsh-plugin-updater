@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-updater",
-  "version": "0.3.4",
-  "description": "Startup update checks for installed DSH plugins, DSH Desktop and the core, with a draggable panel, live progress, one-click updates and per-version ignore — no agent calls, no token spend.",
+  "version": "0.3.5",
+  "description": "Startup update checks for installed DSH NEXT plugins and the core, with panel appearance settings, live progress, one-click updates, a data-folder migration sheet and per-version ignore — no agent calls, no token spend.",
   "license": "MIT",
   "author": "TT10-24 (https://github.com/TT10-24)",
   "repository": {
@@ -17,7 +17,8 @@
     "deepseek-harness",
     "dsh-plugin",
     "plugin-updater",
-    "update-checker"
+    "update-checker",
+    "dsh-next"
   ],
   "icon": "./icon.svg",
   "meta": {
@@ -26,8 +27,8 @@
       "en": "Update Checker"
     },
     "description": {
-      "zh": "上线时自动检查已安装插件、DSH 桌面端与内核版本；左侧可拖动面板提示，带实时进度、一键全部更新、按版本忽略和重启按钮，全程不调用 agent、不消耗 token。",
-      "en": "Checks installed plugins, DSH Desktop and the core on every launch. A draggable panel shows live progress, updates everything in one click, ignores one version and offers a restart button — no agent calls, no token spend."
+      "zh": "上线时检查已安装插件与内核；DSH NEXT 区域显示当前版本和数据目录，可复制插件、工作区与对话到你选择的文件夹；三点调整面板大小与配色，全程不调用 agent、不消耗 token。",
+      "en": "Checks installed DSH NEXT plugins and the core on every launch. Three-dot panel settings control size and color, one click updates everything, and a data-folder sheet migrates plugins, workspaces and conversations to a folder you choose — no agent calls, no token spend."
     }
   },
   "type": "module",

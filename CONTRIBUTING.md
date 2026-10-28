@@ -9,13 +9,13 @@ git clone https://github.com/TT10-24/dsh-plugin-updater.git
 cd dsh-plugin-updater
 ```
 
-把插件挂到你的 DSH profile（示例）：
+把插件挂到你的 DSH NEXT profile（示例）：
 
 ```bash
 dsh plugin --profile desktop add link:"<本目录绝对路径>"
 ```
 
-修改后重启 DSH Desktop。
+修改后重启 DSH NEXT。
 
 ## 检查
 
@@ -31,16 +31,20 @@ node .check/drag-check.mjs ./client.js
 Host 自检需要 DSH 安装目录和真实 profile，只在本机运行；GitHub Actions 只跑纯 Node 检查：
 
 ```bash
-DSH_DESKTOP_RESOURCES="<DSH Desktop>/resources" \
+DSH_DESKTOP_RESOURCES="<DSH NEXT>/resources" \
   node .check/selfcheck.mjs "<DSH_HOME>/profiles/desktop" "./client.js"
 ```
+
+新增的临时 profile 用例必须显式给 `UpdaterService` 传 `profileDir`，否则 `DSH_PROFILE_DIR` 会让测试读写真实 profile。
 
 ## 约定
 
 - 只用原生 ESM，不引入运行时依赖；客户端只 `require('react')`。
-- 颜色只用 `--dsw-alias-*` 主题 token，不写死颜色（图标除外）。
+- 面板颜色走 `PANEL_PALETTE` 的 CSS 变量与 fallback（`--upd-*`），新增颜色时同时提供默认值；侧边栏仍用 `--dsw-alias-*` 主题 token。
 - 你看到的界面文字要同时更新 `locale/zh.json` / `locale/en.json` 和 `client.js` 里的字典。
 - 更新/回滚逻辑只放在 Host 的 `update()`；客户端不重复实现。
+- 0.3.5 起只支持 DSH NEXT；不要重新引入 DSH Desktop 版本服务、安装器更新或 `/api/desktop/*` 调用。
+- 数据目录迁移必须“先复制/校验，再写指针”，失败不删除源目录。
 - 提交信息建议：`feat: ...`、`fix: ...`、`docs: ...`、`chore: ...`。
 
 ## 提 PR 之前
@@ -48,14 +52,14 @@ DSH_DESKTOP_RESOURCES="<DSH Desktop>/resources" \
 1. 先看 [项目看板](https://github.com/users/TT10-24/projects/3) 和已有 Issue，避免重复。
 2. 从 `main` 切一个分支，例如 `feat/progress-bar`。
 3. 跑完上面的检查。
-4. 提交 PR，说明你改了什么、怎么验证的，并附上 DSH Desktop / dsh 版本与复现步骤。
+4. 提交 PR，说明你改了什么、怎么验证的，并附上 DSH NEXT / dsh 版本与复现步骤。
 5. 在 PR 描述里用 `Closes #编号` 关联对应 Issue。
 
 ## 报告问题
 
 请使用 [Bug 模板](https://github.com/TT10-24/dsh-plugin-updater/issues/new?template=bug_report.yml)，尽量附上：
 
-- DSH Desktop 版本与 dsh 内核版本
+- DSH NEXT 版本与 dsh 内核版本
 - 插件版本
 - 操作系统
 - 复现步骤、期望结果、实际结果

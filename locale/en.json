@@ -1,4 +1,4 @@
 {
   "title": "Update Checker",
-  "description": "Checks installed plugins, DSH Desktop and the core on every launch; preserves the data directory when the desktop moves to DSH NEXT, and can ignore one version at a time."
+  "description": "Checks installed DSH NEXT plugins and the core on every launch; three-dot panel settings for size and color, data-folder migration to a folder you choose, and per-version ignore."
 }

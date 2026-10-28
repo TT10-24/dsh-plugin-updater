@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>dsh-plugin-updater — 你的 DSH 更新管家</title>
-  <meta name="description" content="在 DSH 启动时检查插件、DSH Desktop 与内核更新。可拖动面板、实时进度、一键全部更新，全程不消耗 token。">
+  <meta name="description" content="在 DSH NEXT 启动时检查插件与内核更新，并把插件、工作区、对话迁移到你选择的数据文件夹。可拖动面板支持三点调整大小与配色。">
   <meta property="og:title" content="dsh-plugin-updater — 你的 DSH 更新管家">
-  <meta property="og:description" content="插件、桌面端、内核，一次检查完。零 token，带进度条与一键全部更新。">
+  <meta property="og:description" content="插件、内核、数据目录，一个面板处理完。零 token，带进度条、一键全部更新与数据迁移。">
   <meta property="og:type" content="website">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
@@ -62,9 +62,9 @@
   <main id="main">
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> 零 token · MIT · DSH Desktop 2.0+</p>
+        <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> 零 token · MIT · DSH NEXT</p>
         <h1><span class="headline-line">让 DSH 的每次更新，</span><br><span class="gradient">都一目了然。</span></h1>
-        <p class="lede">插件、DSH Desktop、内核，一次检查完。需要更新时，侧边栏旁会出现一个可拖动面板：实时进度、一键全部更新、需要时直接重启。</p>
+        <p class="lede">插件与内核一次检查完，DSH NEXT 的数据目录也能迁移到你选择的文件夹。需要更新时，侧边栏旁会出现一个可拖动面板：实时进度、一键全部更新、复制插件与对话后再切换。</p>
         <div class="hero-actions">
           <a class="button primary" href="#install">安装到 DSH</a>
           <a class="button" href="https://github.com/TT10-24/dsh-plugin-updater" target="_blank" rel="noreferrer">查看源码 <span aria-hidden="true">↗</span></a>
@@ -87,7 +87,7 @@
                 <path d="M5 15a7 7 0 0 0 14 0"></path>
               </svg>
             </span>
-            <span class="panel-heading"><strong>更新检查</strong><small>拖动标题栏移动</small></span>
+            <span class="panel-heading"><strong>更新检查</strong><small>拖动移动，三点设置</small></span>
             <span class="panel-grip" aria-hidden="true">•••</span>
           </div>
           <div class="panel-progress">
@@ -116,7 +116,7 @@
             <span class="row-check" aria-hidden="true">✓</span>
           </div>
           <div class="panel-footer">
-            <span><span class="row-dot ok" aria-hidden="true"></span> 12:30 已检查 · 不消耗 token</span>
+            <span><span class="row-dot ok" aria-hidden="true"></span> 12:30 已检查</span>
             <span>重新检查</span>
           </div>
         </div>
@@ -125,7 +125,7 @@
     </section>
 
     <section class="stats" aria-label="项目要点">
-      <div><strong>3</strong><span>层检查：插件 / 桌面端 / 内核</span></div>
+      <div><strong>2</strong><span>层检查：插件 / 内核</span></div>
       <div><strong>0</strong><span>token 消耗，无模型调用</span></div>
       <div><strong>1</strong><span>次点击更新全部插件</span></div>
       <div><strong>MIT</strong><span>开源许可，可自由修改</span></div>
@@ -140,18 +140,18 @@
       <div class="feature-grid">
         <article class="feature">
           <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 16 9 5 9-5"></path></svg></span>
-          <h3>三层检查</h3>
-          <p>插件读 profile 与 bundle 列表；桌面端走官方版本服务；内核显示随桌面端内置的版本。</p>
+          <h3>插件与内核检查</h3>
+          <p>插件读 profile 与 bundle 列表；内核显示随 DSH NEXT 内置的版本。DSH NEXT 自身负责应用更新。</p>
         </article>
         <article class="feature">
           <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6l-8-3Z"></path><path d="m9 12 2 2 4-4"></path></svg></span>
-          <h3>跨版本不丢数据</h3>
-          <p>桌面端切到 DSH NEXT 前，先把数据目录指针写过去；工作区、对话和插件继续沿用，不再打开空工作区。</p>
+          <h3>数据目录随你放</h3>
+          <p>把 DSH NEXT 指向你选择的文件夹；可以只切换指针，也可以复制插件、工作区、对话和存储后再切换。</p>
         </article>
         <article class="feature">
           <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.3-5"></path><path d="M6 8a6 6 0 0 0 12 0"></path><path d="M4 4l16 16"></path><path d="M18 8c0 7-6 7-6 10"></path><path d="M6 8c0 7 6 7 6 10"></path></svg></span>
           <h3>按版本忽略</h3>
-          <p>插件和桌面端都能只忽略“这一次”的版本；上游发新版本会重新提示，已忽略项可随时取消。</p>
+          <p>插件可以只忽略“这一次”的版本；上游发新版本会重新提示，已忽略项可随时取消。</p>
         </article>
         <article class="feature">
           <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9"></path><path d="M10 18V5"></path><path d="M16 18v-7"></path><path d="M22 18V3"></path></svg></span>
@@ -171,12 +171,12 @@
         <article class="feature">
           <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4v7h-7"></path></svg></span>
           <h3>需要时重启</h3>
-          <p>替换插件后 DSH 需要重启才能加载新代码；面板检测到后会直接给你「立即重启 DSH」。</p>
+          <p>替换插件后 DSH NEXT 需要重启才能加载新代码；面板会提示，重启由标题栏完成。</p>
         </article>
         <article class="feature">
           <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h14M5 15h14"></path><path d="m9 5-4 4 4 4"></path><path d="m15 11 4 4-4 4"></path></svg></span>
-          <h3>可拖动，不挡路</h3>
-          <p>拖标题栏移动、双击复位、记住位置、Esc 关闭。它不会压住你的输入框。</p>
+          <h3>可拖动，可换肤</h3>
+          <p>拖标题栏移动、双击复位、记住位置、Esc 关闭；点右上角三个点还能调宽度、强调色、背景和不透明度，设置会记住。</p>
         </article>
       </div>
     </section>
@@ -187,7 +187,7 @@
         <h2>打开 DSH，剩下的交给它</h2>
         <p class="section-lede">检查是普通 HTTPS 请求；更新调用 DSH 自己的插件管理器。没有隐藏的模型调用。</p>
         <ol class="steps">
-          <li><span>01</span><div><strong>启动时静默检查</strong><p>读取你的 profile 与已安装版本，对比 npm registry 和桌面端版本服务。</p></div></li>
+          <li><span>01</span><div><strong>启动时静默检查</strong><p>读取你的 profile 与已安装版本，对比 npm registry，并读 DSH NEXT 的当前版本与数据目录。</p></div></li>
           <li><span>02</span><div><strong>有更新才提醒</strong><p>侧边栏出现数量徽标；点开面板，看到每一层的当前版本与最新版本。</p></div></li>
           <li><span>03</span><div><strong>更新，必要时重启</strong><p>单个或全部更新；失败自动恢复旧版本。需要重启时一键完成。</p></div></li>
         </ol>
@@ -199,10 +199,9 @@
   name: dsh-plugin-updater
   config:
     <span class="k">autoCheck</span>: <span class="v">true</span>
-    <span class="k">checkDesktop</span>: <span class="v">true</span>
     <span class="k">checkEngine</span>: <span class="v">true</span>
     <span class="k">registry</span>: <span class="s">https://registry.npmjs.org</span></code></pre>
-        <p class="code-note">改完重启 DSH Desktop 生效。完整配置见 README。</p>
+        <p class="code-note">改完重启 DSH NEXT 生效。完整配置见 README。</p>
       </div>
     </section>
 
@@ -216,16 +215,16 @@
         <div class="panel large" aria-hidden="true">
           <div class="panel-titlebar">
             <span class="panel-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"></path><path d="m8 8 4-4 4 4"></path><path d="M5 15a7 7 0 0 0 14 0"></path></svg></span>
-            <span class="panel-heading"><strong>更新检查</strong><small>拖动标题栏移动</small></span>
+            <span class="panel-heading"><strong>更新检查</strong><small>拖动移动，三点设置</small></span>
             <span class="panel-grip">•••</span>
           </div>
-          <div class="panel-warning"><strong>有 5 个插件可以更新</strong><span>完成后需要重启 DSH</span><button class="mini solid" type="button">立即重启 DSH</button></div>
+          <div class="panel-warning"><strong>有 5 个插件可以更新</strong><span>完成后请从标题栏重启 DSH NEXT</span></div>
           <div class="panel-section"><span>插件</span><span class="count">5</span><button class="mini" type="button">全部更新 (5)</button></div>
           <div class="plugin-row is-update"><span class="row-dot warn"></span><span class="row-main"><strong>dsh-ops</strong><small>0.4.1 → 0.4.2</small></span><button class="mini solid" type="button">更新</button></div>
           <div class="plugin-row is-update"><span class="row-dot warn"></span><span class="row-main"><strong>dsh-context</strong><small>0.73.1 → 0.74.0</small></span><button class="mini solid" type="button">更新</button></div>
           <div class="plugin-row is-busy"><span class="row-dot brand"></span><span class="row-main"><strong>eac-design-world</strong><small>正在更新…</small></span><span class="row-check brand">•••</span></div>
           <div class="plugin-row"><span class="row-dot ok"></span><span class="row-main"><strong>dsh-whale-widget</strong><small>0.4.2 · 已是最新</small></span><span class="row-check">✓</span></div>
-          <div class="panel-footer"><span><span class="row-dot ok"></span> 12:30 已检查 · 不消耗 token</span><span>重新检查</span></div>
+          <div class="panel-footer"><span><span class="row-dot ok"></span> 12:30 已检查</span><span>重新检查</span></div>
         </div>
         <ul class="interface-notes">
           <li><strong>状态色</strong><span>黄点待更新、蓝点进行中、绿点已完成；你不需要读日志判断。</span></li>
@@ -240,7 +239,7 @@
       <div class="section-head">
         <p class="kicker">安装</p>
         <h2>一分钟接入你的 DSH</h2>
-        <p class="section-lede">推荐从 GitHub 安装；想固定版本就用 tag。安装后重启 DSH Desktop。</p>
+        <p class="section-lede">推荐从 GitHub 安装；想固定版本就用 tag。安装后重启 DSH NEXT。</p>
       </div>
       <div class="install-grid">
         <article class="install-card">
@@ -261,11 +260,11 @@
           <span class="badge subtle">固定版本</span>
           <h3>锁在某个 Release</h3>
           <p>适合想稳定复现的环境。把版本号换成你需要的 tag：</p>
-          <div class="command small" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4">
-            <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4</code>
-            <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4">复制</button>
+          <div class="command small" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.5">
+            <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.5</code>
+            <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.5">复制</button>
           </div>
-          <p class="fine">安装 / 更新后重启 DSH Desktop。插件会出现在侧边栏底部，显示「查看更新」。</p>
+          <p class="fine">安装 / 更新后重启 DSH NEXT。插件会出现在侧边栏底部，显示「查看更新」。</p>
         </article>
       </div>
     </section>
@@ -282,23 +281,23 @@
         </details>
         <details>
           <summary>为什么更新后要重启？</summary>
-          <p>替换已安装插件的代码后，运行中的 DSH 仍持有旧模块；新增组件行也要重启才会进入运行树。面板会在需要时给你重启按钮。</p>
+          <p>替换已安装插件的代码后，运行中的 DSH NEXT 仍持有旧模块；新增组件行也要重启才会进入运行树。面板会提示，重启由标题栏完成。</p>
         </details>
         <details>
           <summary>更新失败会怎样？</summary>
-          <p>插件会尝试恢复旧版本，并把原因显示在对应插件行下方。你可以重启后再试，或到插件页手动批准构建脚本。</p>
+          <p>插件会尝试恢复旧版本，并把原因显示在对应插件行下方。DSH NEXT 里遇到无法热卸载的宿主插件时，会自动改为覆盖安装并提示重启；失败仍会回滚，也可以到插件页手动批准构建脚本。</p>
         </details>
         <details>
-          <summary>普通 Web 环境能用吗？</summary>
-          <p>可以检查插件；没有桌面端时，桌面端区域显示“未检测到桌面端”，不会出现桌面端更新按钮。</p>
+          <summary>迁移数据目录会复制什么？</summary>
+          <p>会复制 <code>profiles</code>（插件配置与插件包）、<code>sessions</code>（对话）、<code>storages</code>（存储）和根目录的凭据/偏好文件；<code>logs</code> 与缓存不复制。源目录不会被删除。</p>
         </details>
         <details>
-          <summary>更新桌面端后工作区不见了？</summary>
-          <p>DSH NEXT 是独立产品，默认数据目录是 <code>~/.dsh</code>。0.3.4 起面板会先保留数据目录；如果已经装好且没对齐，点「修复数据目录」，或运行 <code>&lt;DSH_HOME&gt;\plugin-updater\restore-desktop-data.ps1</code>。</p>
+          <summary>怎么把数据迁移到另一个盘？</summary>
+          <p>面板的 DSH NEXT 区域点「迁移数据目录」，选择目标文件夹。数据已在目标盘时只切换指针；目标为空时勾选「同时复制现有数据」，复制完成后再写指针。源目录不会被删除。</p>
         </details>
         <details>
           <summary>怎么固定版本或回滚？</summary>
-          <p>安装时用 <code>#v0.3.4</code> 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。</p>
+          <p>安装时用 <code>#v0.3.5</code> 固定 tag；回滚就重新安装旧 tag，然后重启 DSH NEXT。</p>
         </details>
       </div>
     </section>

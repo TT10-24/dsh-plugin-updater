@@ -5,11 +5,10 @@
  * non-blocking "updates are waiting" signal, and the panel it opens is
  * draggable and remembers its position.
  *
- * The panel shows three layers — plugin packages, DSH Desktop, and the DSH core
- * bundled inside Desktop. Desktop updates are handed to the shell's own official
- * flow: the panel POSTs `/api/desktop/updates/check` with the browser session,
- * exactly as the Desktop settings page does, so this plugin never reimplements
- * downloading or installing.
+ * The panel shows two working layers — plugin packages and the DSH NEXT data
+ * folder — plus the DSH core bundled inside DSH NEXT. DSH NEXT updates itself;
+ * this plugin only reports the running version and can migrate the data folder
+ * the user chooses.
  *
  * Nothing here starts an agent turn, so none of it bills the account.
  *
@@ -30,12 +29,42 @@ window.__ModuleLoader__.load({
     const DETAIL_SLOT = 'plugins.detail.actions'
     const PACKAGE = 'dsh-plugin-updater'
     const POSITION_KEY = 'dsh-plugin-updater:panel-position'
+    const APPEARANCE_KEY = 'dsh-plugin-updater:panel-appearance'
     const PANEL_WIDTH = 408
     const PANEL_MAX_HEIGHT = 620
 
+    /** Bounds for the appearance controls; also the sanitiser for stored values. */
+    const APPEARANCE_LIMITS = {
+      width: { min: 320, max: 560, step: 4 },
+      height: { min: 380, max: 820, step: 10 },
+      opacity: { min: 0.72, max: 1, step: 0.02 },
+    }
+    const APPEARANCE_DEFAULT = {
+      width: PANEL_WIDTH,
+      height: PANEL_MAX_HEIGHT,
+      accent: '#6b8cff',
+      accent2: '#8f6bff',
+      surface: 'navy',
+      opacity: 1,
+    }
+    /** Dark surfaces keep the panel readable without inheriting a light theme. */
+    const PANEL_SURFACES = {
+      navy: { bg: '#151923', head: '#1a1f2b', row: '#1e2431', rowHover: '#232a39', border: '#2a3140', borderStrong: '#3a4356' },
+      graphite: { bg: '#14161a', head: '#191c21', row: '#1e2228', rowHover: '#252a31', border: '#2b3038', borderStrong: '#3b424d' },
+      plum: { bg: '#1a1420', head: '#211828', row: '#261c2f', rowHover: '#2f2339', border: '#3a2b44', borderStrong: '#4a3657' },
+      forest: { bg: '#101a17', head: '#15211d', row: '#192723', rowHover: '#1f302b', border: '#2a3c35', borderStrong: '#385046' },
+    }
+    /** Accent pairs for the logo, primary buttons, progress bar and live dots. */
+    const PANEL_ACCENTS = [
+      { id: 'indigo', accent: '#6b8cff', accent2: '#8f6bff' },
+      { id: 'emerald', accent: '#3ecf8e', accent2: '#2bb673' },
+      { id: 'amber', accent: '#f5b544', accent2: '#ff8a3d' },
+      { id: 'rose', accent: '#ff6b9a', accent2: '#c86bff' },
+      { id: 'cyan', accent: '#46c7f5', accent2: '#4c8dff' },
+    ]
+
     const ZH = {
       title: '更新检查',
-      subtitle: '插件 · 桌面端 · 内核 · 拖动标题栏移动',
       open: '查看更新',
       close: '关闭',
       checkNow: '重新检查',
@@ -46,45 +75,34 @@ window.__ModuleLoader__.load({
       pluginsTitle: '插件',
       pluginUpdates: '{count} 个可更新',
       allCurrent: '全部最新',
-      desktopTitle: 'DSH 桌面端',
-      desktopCurrent: '已是最新',
-      desktopUpdate: '更新桌面端',
-      desktopUnavailable: '未检测到桌面端（当前为普通 Web 运行）',
-      desktopStarted: '已交给桌面端，请按弹窗提示完成',
-      desktopFailed: '无法启动桌面端更新',
-      desktopHint: '由桌面端原生流程下载安装',
-      channel: '通道 {channel}',
-      migrationTitle: 'DSH Desktop → DSH NEXT',
-      migrationBody: '这是独立的 DSH NEXT 产品线：默认数据目录与安装目录都不同。直接更新会让新版本打开一个空工作区。',
-      migrationPreserve: '更新前会把数据目录指针写入 DSH NEXT：{home}（原指针会先备份）。',
-      migrationNoHome: '无法确定当前 DSH 数据目录，已停止自动迁移。请先在 DSH 中确认数据目录。',
-      migrationUpdate: '保留数据并更新',
-      migrationSkip: '仍然直接更新',
-      migrationPreparing: '正在写入 DSH NEXT 数据目录指针…',
-      migrationPreserved: '数据目录已指向 {home}，继续交给桌面端安装',
-      migrationFailed: '迁移准备失败，未启动更新',
-      migrationInstallerHint: '桌面端会下载官方安装包；安装位置不影响数据目录。',
-      dataTitle: 'DSH NEXT 数据目录未对齐',
-      dataBody: 'DSH NEXT 现在没有使用 {home}，打开后看不到原有工作区。',
-      dataRepair: '修复数据目录',
-      dataRepairing: '正在修复…',
-      dataRepaired: '已指向 {home}，重启 DSH NEXT 后生效',
-      dataFailed: '修复数据目录失败',
-      migrationExisting: 'DSH NEXT 现有数据目录：{pointer}；本次会改为 {home}（原指针会先备份）。',
-      kindProduct: '产品线切换',
-      kindMajor: '大版本',
-      kindMinor: '功能版本',
-      kindPatch: '补丁',
+      nextTitle: 'DSH NEXT',
+      nextData: '数据目录',
+      nextDataMismatch: 'DSH NEXT 当前使用 {pointer}',
+      nextMigrate: '迁移数据目录',
+      nextMigrateTitle: '迁移数据目录',
+      nextMigrateBody: '把 DSH NEXT 的数据目录指向你选择的文件夹。可只切换指针，或复制插件、工作区与对话。',
+      nextSource: '当前数据目录',
+      nextTarget: '目标文件夹',
+      nextBrowse: '浏览…',
+      nextBrowsing: '选择中…',
+      nextCopy: '同时复制现有数据（插件、工作区、对话）',
+      nextCopyHint: '复制模式要求目标文件夹不存在，可能需要几分钟。',
+      nextPointerHint: '只切换指针要求目标文件夹已有 DSH 数据。',
+      nextApply: '开始迁移',
+      nextApplying: '正在迁移…',
+      nextCancel: '取消',
+      nextDone: '已指向 {home}，请重启 DSH NEXT 后生效',
+      nextFailed: '迁移失败',
+      nextPickerFailed: '无法打开文件夹选择器，请手动输入绝对路径',
+      nextUnavailable: '未检测到 DSH NEXT 数据目录支持',
       ignoredTitle: '已忽略',
       ignoredRow: '已忽略 {version}',
       ignore: '忽略',
       ignoreFailed: '忽略失败',
       unignore: '取消忽略',
       ignoredRestored: '已取消忽略',
-      desktopIgnore: '忽略本次',
-      desktopIgnored: '已忽略此次更新',
       engineTitle: '内核',
-      engineBundled: '随桌面端更新',
+      engineBundled: '随 DSH NEXT 更新',
       latest: '最新',
       update: '更新',
       updateAll: '全部更新',
@@ -100,24 +118,34 @@ window.__ModuleLoader__.load({
       batchUpdated: '已更新 {count} 个插件',
       batchPartial: '完成 {done} 个，失败 {failed} 个',
       restored: '已恢复原版本',
-      restartThenUpdate: '可重启 DSH 后再试',
-      restartNow: '立即重启 DSH',
-      restarting: '正在重启…',
-      restartFailed: '重启失败',
+      restartThenUpdate: '可重启 DSH NEXT 后再试',
       pendingBuilds: '需批准构建脚本: {names}',
       updated: '更新完成',
-      restartHint: '部分更新需要重启 dsh 后生效',
+      restartHint: '重启 DSH NEXT 后生效',
       lastChecked: '上次检查 {time}',
-      noTokens: '不消耗 token',
       bypassed: '跳过 {count} 个（本地链接 / 非版本号）',
       dragHint: '拖动顶部移动，双击复位',
+      appearance: '面板设置',
+      appearanceHint: '调整大小、颜色与位置',
+      panelWidth: '宽度',
+      panelHeight: '最大高度',
+      accentColor: '强调色',
+      customColor: '自定义',
+      surfaceColor: '背景',
+      surfaceNavy: '深海军蓝',
+      surfaceGraphite: '石墨灰',
+      surfacePlum: '梅子紫',
+      surfaceForest: '森林绿',
+      opacity: '不透明度',
+      resetAppearance: '恢复默认',
+      resetPosition: '复位位置',
+      done: '完成',
       degraded: '部分内核能力缺失，已自动降级',
       available: '{count} 个可更新',
       upToDate: '全部最新',
     }
     const EN = {
       title: 'Updates',
-      subtitle: 'Plugins · Desktop · Core · drag the header to move',
       open: 'View updates',
       close: 'Close',
       checkNow: 'Check again',
@@ -128,45 +156,34 @@ window.__ModuleLoader__.load({
       pluginsTitle: 'Plugins',
       pluginUpdates: '{count} update(s)',
       allCurrent: 'All current',
-      desktopTitle: 'DSH Desktop',
-      desktopCurrent: 'Up to date',
-      desktopUpdate: 'Update Desktop',
-      desktopUnavailable: 'No Desktop detected (plain web run)',
-      desktopStarted: 'Handed to Desktop — follow its prompt',
-      desktopFailed: 'Could not start the Desktop update',
-      desktopHint: "Desktop's own installer flow",
-      channel: 'channel {channel}',
-      migrationTitle: 'DSH Desktop → DSH NEXT',
-      migrationBody: 'DSH NEXT is a separate product line with its own default data directory and installer. Updating directly opens it with an empty workspace.',
-      migrationPreserve: 'The update will point DSH NEXT at {home} first (the previous pointer is backed up).',
-      migrationNoHome: 'The current DSH data directory could not be resolved, so the automatic handoff was stopped.',
-      migrationUpdate: 'Keep data and update',
-      migrationSkip: 'Update directly anyway',
-      migrationPreparing: 'Writing the DSH NEXT data-directory pointer…',
-      migrationPreserved: 'Data directory points at {home}; continuing with the Desktop installer',
-      migrationFailed: 'Migration preflight failed; the update was not started',
-      migrationInstallerHint: 'The Desktop downloads the official installer; its install location does not change the data directory.',
-      dataTitle: 'DSH NEXT data directory is out of sync',
-      dataBody: 'DSH NEXT is not using {home}, so its workspace would look empty.',
-      dataRepair: 'Repair data directory',
-      dataRepairing: 'Repairing…',
-      dataRepaired: 'Now points at {home}; restart DSH NEXT to apply',
-      dataFailed: 'Could not repair the data directory',
-      migrationExisting: 'DSH NEXT currently uses {pointer}; this update will point it at {home} (the old pointer is backed up).',
-      kindProduct: 'Product line',
-      kindMajor: 'Major',
-      kindMinor: 'Feature',
-      kindPatch: 'Patch',
+      nextTitle: 'DSH NEXT',
+      nextData: 'Data directory',
+      nextDataMismatch: 'DSH NEXT currently uses {pointer}',
+      nextMigrate: 'Migrate data folder',
+      nextMigrateTitle: 'Migrate data folder',
+      nextMigrateBody: 'Point DSH NEXT at a folder you choose. Switch the pointer only, or copy plugins, workspaces and conversations.',
+      nextSource: 'Current data folder',
+      nextTarget: 'Target folder',
+      nextBrowse: 'Browse…',
+      nextBrowsing: 'Choosing…',
+      nextCopy: 'Also copy plugins, workspaces and conversations',
+      nextCopyHint: 'Copy mode requires a new target folder and may take a few minutes.',
+      nextPointerHint: 'Pointer-only mode requires a folder that already holds DSH data.',
+      nextApply: 'Start migration',
+      nextApplying: 'Migrating…',
+      nextCancel: 'Cancel',
+      nextDone: 'Now points at {home}; restart DSH NEXT to apply',
+      nextFailed: 'Migration failed',
+      nextPickerFailed: 'Could not open the folder picker; type an absolute path instead',
+      nextUnavailable: 'DSH NEXT data-directory support is unavailable',
       ignoredTitle: 'Ignored',
       ignoredRow: 'Ignored {version}',
       ignore: 'Ignore',
       ignoreFailed: 'Could not ignore this version',
       unignore: 'Unignore',
       ignoredRestored: 'Unignored',
-      desktopIgnore: 'Ignore this one',
-      desktopIgnored: 'This update is ignored',
       engineTitle: 'Core',
-      engineBundled: 'ships with Desktop',
+      engineBundled: 'ships with DSH NEXT',
       latest: 'latest',
       update: 'Update',
       updateAll: 'Update all',
@@ -182,17 +199,28 @@ window.__ModuleLoader__.load({
       batchUpdated: 'Updated {count} plugin(s)',
       batchPartial: '{done} done, {failed} failed',
       restored: 'previous version restored',
-      restartThenUpdate: 'restart dsh and try again',
-      restartNow: 'Restart DSH now',
-      restarting: 'Restarting…',
-      restartFailed: 'Restart failed',
+      restartThenUpdate: 'restart DSH NEXT and try again',
       pendingBuilds: 'build scripts need approval: {names}',
       updated: 'Updated',
-      restartHint: 'Restart dsh to apply some updates',
+      restartHint: 'Restart DSH NEXT to apply',
       lastChecked: 'checked {time}',
-      noTokens: 'no tokens spent',
       bypassed: '{count} skipped (local link / no version)',
       dragHint: 'Drag the header to move, double-click to reset',
+      appearance: 'Panel settings',
+      appearanceHint: 'Size, color and position',
+      panelWidth: 'Width',
+      panelHeight: 'Max height',
+      accentColor: 'Accent',
+      customColor: 'Custom',
+      surfaceColor: 'Surface',
+      surfaceNavy: 'Navy',
+      surfaceGraphite: 'Graphite',
+      surfacePlum: 'Plum',
+      surfaceForest: 'Forest',
+      opacity: 'Opacity',
+      resetAppearance: 'Reset',
+      resetPosition: 'Reset position',
+      done: 'Done',
       degraded: 'Some kernel capabilities are missing; degraded automatically',
       available: '{count} update(s)',
       upToDate: 'All current',
@@ -206,8 +234,6 @@ window.__ModuleLoader__.load({
         error: null,
         busy: {},
         rowErrors: {},
-        desktopBusy: false,
-        restartBusy: false,
         restartRequired: false,
         message: null,
         open: false,
@@ -354,20 +380,8 @@ window.__ModuleLoader__.load({
       return (report?.packages ?? []).filter((entry) => entryState(entry) === 'update')
     }
 
-    function desktopNeedsUpdate(report) {
-      return report?.desktop?.status === 'update'
-    }
-
-    function desktopKindLabel(kind, t) {
-      if (kind === 'product-line') return t('kindProduct')
-      if (kind === 'major') return t('kindMajor')
-      if (kind === 'minor') return t('kindMinor')
-      if (kind === 'patch') return t('kindPatch')
-      return null
-    }
-
     function totalUpdates(report) {
-      return updateEntries(report).length + (desktopNeedsUpdate(report) ? 1 : 0)
+      return updateEntries(report).length
     }
 
     /** Smooth progress: completed packages plus the current package's stage. */
@@ -535,117 +549,6 @@ window.__ModuleLoader__.load({
       await runCheck(true)
     }
 
-    /**
-     * Restart the desktop app so newly replaced plugin modules and new component
-     * rows are composed from disk. This is the shell's own route (the same request
-     * its settings page sends), so it keeps the browser session requirement.
-     */
-    async function restartDesktop(t) {
-      store.set({ restartBusy: true, message: t('restarting') })
-      try {
-        const response = await fetch('/api/desktop/restart', {
-          method: 'POST',
-          credentials: 'same-origin',
-          redirect: 'error',
-          headers: { accept: 'application/json', 'content-type': 'application/json' },
-          body: '{}',
-        })
-        if (!response.ok) {
-          const text = await response.text()
-          let parsed = null
-          try {
-            parsed = JSON.parse(text)
-          } catch {
-            parsed = null
-          }
-          store.set({ message: `${t('restartFailed')}: ${parsed?.error ?? `HTTP ${response.status}`}` })
-        }
-      } catch (error) {
-        store.set({ message: `${t('restartFailed')}: ${error instanceof Error ? error.message : String(error)}` })
-      } finally {
-        store.set({ restartBusy: false })
-      }
-    }
-
-    /**
-     * Start the Desktop's own update flow.
-     *
-     * This route belongs to the desktop shell and requires the browser session —
-     * it is the same request the Desktop settings page sends — so it has to be a
-     * browser call rather than a Host one. The shell then owns the native
-     * confirmation, download and installer launch.
-     */
-    async function updateDesktop(t) {
-      store.set({ desktopBusy: true, message: null })
-      try {
-        const response = await fetch('/api/desktop/updates/check', {
-          method: 'POST',
-          credentials: 'same-origin',
-          redirect: 'error',
-          headers: { accept: 'application/json', 'content-type': 'application/json' },
-          body: '{}',
-        })
-        const text = await response.text()
-        let parsed = null
-        try {
-          parsed = JSON.parse(text)
-        } catch {
-          parsed = null
-        }
-        if (response.ok && parsed?.accepted === true) {
-          store.set({ message: t('desktopStarted') })
-        } else {
-          const detail = typeof parsed?.error === 'string' ? parsed.error : `HTTP ${response.status}`
-          store.set({ message: `${t('desktopFailed')}: ${detail}` })
-        }
-      } catch (error) {
-        store.set({ message: `${t('desktopFailed')}: ${error instanceof Error ? error.message : String(error)}` })
-      } finally {
-        store.set({ desktopBusy: false })
-      }
-    }
-
-    /**
-     * Write the successor product's data-directory pointer before handing a
-     * product-line change to the shell. The Host performs the write; this
-     * function only decides when it is safe to continue.
-     */
-    async function migrateDesktop(t, desktop) {
-      const plan = desktop?.migration
-      if (plan === null || plan === undefined) {
-        await updateDesktop(t)
-        return
-      }
-      store.set({ desktopBusy: true, message: t('migrationPreparing') })
-      try {
-        const prepared = await callHost('prepareDesktopUpdate', {
-          preserveHome: true,
-          targetVersion: desktop.latestVersion ?? plan.targetVersion ?? null,
-        })
-        if (prepared?.ok === false) throw new Error(prepared.error ?? 'the data directory could not be prepared')
-        store.set({ message: t('migrationPreserved', { home: prepared?.home ?? plan.home ?? '' }) })
-        await updateDesktop(t)
-      } catch (error) {
-        store.set({ message: `${t('migrationFailed')}: ${error instanceof Error ? error.message : String(error)}`, desktopBusy: false })
-      }
-    }
-
-    /** Repair a DSH NEXT pointer that was left on the default `~/.dsh` home. */
-    async function repairDesktop(t) {
-      store.set({ desktopBusy: true, message: t('dataRepairing') })
-      try {
-        const result = await callHost('repairDesktopData', {})
-        if (result?.ok === false) throw new Error(result.error ?? 'the data directory could not be repaired')
-        store.set({ message: t('dataRepaired', { home: result?.home ?? '' }) })
-        await runCheck(true)
-      } catch (error) {
-        store.set({ message: `${t('dataFailed')}: ${error instanceof Error ? error.message : String(error)}` })
-      } finally {
-        store.set({ desktopBusy: false })
-      }
-    }
-
-
     /** Pin one plugin version as ignored; a newer release appears again. */
     async function ignorePlugin(entry, t) {
       store.set({ busy: { ...store.state.busy, [entry.name]: true } })
@@ -685,35 +588,6 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** Pin this Desktop release as ignored; it stays visible with an undo action. */
-    async function ignoreDesktopUpdate(desktop, t) {
-      store.set({ desktopBusy: true })
-      try {
-        const result = await callHost('ignore', { target: 'desktop', version: desktop.latestVersion })
-        if (result?.ok === false) throw new Error(result.error ?? 'the version could not be ignored')
-        store.set({ message: t('ignoredRow', { version: desktop.latestVersion ?? '' }) })
-        await runCheck(true)
-      } catch (error) {
-        store.set({ message: `${t('ignoreFailed')}: ${error instanceof Error ? error.message : String(error)}` })
-      } finally {
-        store.set({ desktopBusy: false })
-      }
-    }
-
-    async function unignoreDesktopUpdate(t) {
-      store.set({ desktopBusy: true })
-      try {
-        const result = await callHost('unignore', { target: 'desktop' })
-        if (result?.ok === false) throw new Error(result.error ?? 'the ignore entry could not be removed')
-        store.set({ message: t('ignoredRestored') })
-        await runCheck(true)
-      } catch (error) {
-        store.set({ message: `${t('ignoreFailed')}: ${error instanceof Error ? error.message : String(error)}` })
-      } finally {
-        store.set({ desktopBusy: false })
-      }
-    }
-
     //#region Dragging
     function readPosition() {
       try {
@@ -737,6 +611,51 @@ window.__ModuleLoader__.load({
 
     function clamp(value, min, max) {
       return Math.min(Math.max(value, min), Math.max(min, max))
+    }
+
+    /** Convert a #rrggbb accent to the translucent tint used by the panel glow. */
+    function hexToRgba(value, alpha) {
+      const match = /^#([0-9a-f]{6})$/i.exec(typeof value === 'string' ? value.trim() : '')
+      if (match === null) return `rgba(107, 140, 255, ${alpha})`
+      const number = Number.parseInt(match[1], 16)
+      return `rgba(${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`
+    }
+
+    /** Keep a stored or user-edited appearance inside the supported bounds. */
+    function sanitizeAppearance(value) {
+      const input = value !== null && typeof value === 'object' ? value : {}
+      const width = Number(input.width)
+      const height = Number(input.height)
+      const opacity = Number(input.opacity)
+      const accent = typeof input.accent === 'string' && /^#[0-9a-f]{6}$/i.test(input.accent) ? input.accent : APPEARANCE_DEFAULT.accent
+      const accent2 = typeof input.accent2 === 'string' && /^#[0-9a-f]{6}$/i.test(input.accent2) ? input.accent2 : APPEARANCE_DEFAULT.accent2
+      const surface = Object.hasOwn(PANEL_SURFACES, input.surface) ? input.surface : APPEARANCE_DEFAULT.surface
+      return {
+        width: clamp(Number.isFinite(width) ? Math.round(width) : APPEARANCE_DEFAULT.width, APPEARANCE_LIMITS.width.min, APPEARANCE_LIMITS.width.max),
+        height: clamp(Number.isFinite(height) ? Math.round(height) : APPEARANCE_DEFAULT.height, APPEARANCE_LIMITS.height.min, APPEARANCE_LIMITS.height.max),
+        accent,
+        accent2,
+        surface,
+        opacity: clamp(Number.isFinite(opacity) ? opacity : APPEARANCE_DEFAULT.opacity, APPEARANCE_LIMITS.opacity.min, APPEARANCE_LIMITS.opacity.max),
+      }
+    }
+
+    function readAppearance() {
+      try {
+        const raw = globalThis.localStorage?.getItem(APPEARANCE_KEY)
+        if (typeof raw !== 'string' || raw.length === 0) return { ...APPEARANCE_DEFAULT }
+        return sanitizeAppearance(JSON.parse(raw))
+      } catch {
+        return { ...APPEARANCE_DEFAULT }
+      }
+    }
+
+    function writeAppearance(appearance) {
+      try {
+        globalThis.localStorage?.setItem(APPEARANCE_KEY, JSON.stringify(appearance))
+      } catch {
+        /* storage may be unavailable; the controls still work for this view */
+      }
     }
 
     /** Pointer drag for the panel: header grabs, document tracks, edge clamps. */
@@ -766,7 +685,7 @@ window.__ModuleLoader__.load({
         const place = () => {
           const rect = anchorRef?.current?.getBoundingClientRect()
           const width = panelRef.current?.offsetWidth ?? PANEL_WIDTH
-          const height = Math.min(panelRef.current?.offsetHeight ?? 380, PANEL_MAX_HEIGHT)
+          const height = panelRef.current?.offsetHeight ?? 380
           const left = rect ? clamp(rect.right + 10, 8, window.innerWidth - width - 8) : 12
           const top = rect ? clamp(rect.top - Math.min(140, height / 3), 8, window.innerHeight - height - 8) : 96
           setPosition({ left, top })
@@ -781,7 +700,7 @@ window.__ModuleLoader__.load({
           setPosition((current) => {
             if (current === null) return current
             const width = panelRef.current?.offsetWidth ?? PANEL_WIDTH
-            const height = Math.min(panelRef.current?.offsetHeight ?? 380, PANEL_MAX_HEIGHT)
+            const height = panelRef.current?.offsetHeight ?? 380
             return {
               left: clamp(current.left, 8, window.innerWidth - width - 8),
               top: clamp(current.top, 8, window.innerHeight - height - 8),
@@ -818,7 +737,7 @@ window.__ModuleLoader__.load({
           left: rect.left,
           top: rect.top,
           width: panel.offsetWidth || PANEL_WIDTH,
-          height: Math.min(panel.offsetHeight || 380, PANEL_MAX_HEIGHT),
+          height: panel.offsetHeight || 380,
         }
         dragRef.current = start
         setDragging(true)
@@ -976,173 +895,160 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function DesktopBlock({ desktop, state, t }) {
-      if (desktop === null || desktop === undefined) return h('div', { style: styles.muted }, t('desktopUnavailable'))
-      if (desktop.status === 'unavailable') return h('div', { style: styles.muted }, t('desktopUnavailable'))
-      if (desktop.status === 'update') {
-        const migration = desktop.migration
-        if (migration !== null && migration !== undefined) {
-          const disabled = state.desktopBusy || state.batchTotal > 0
-          return h(
-            'div',
-            { className: 'dsh-updater-row', style: styles.migrationCard },
-            h(
-              'div',
-              { style: styles.rowMeta },
-              h('span', { style: styles.chip }, desktop.currentVersion ?? '?'),
-              h('span', { style: styles.arrow }, '→'),
-              h('span', { style: styles.chipAccent }, desktop.latestVersion ?? '?'),
-              h('span', { style: styles.channelChip }, migration.product ?? 'DSH NEXT'),
-            ),
-            h('div', { style: styles.rowName }, t('migrationTitle')),
-            h('div', { style: styles.migrationText }, t('migrationBody')),
-            migration.canPreserveHome
-              ? h('div', { style: styles.migrationNote }, t('migrationPreserve', { home: migration.home ?? '' }))
-              : h('div', { style: styles.rowError }, t('migrationNoHome')),
-            migration.pointer !== null && migration.pointer !== undefined && !migration.pointerMatchesHome && !migration.pointerIsDefault
-              ? h('div', { style: styles.hint }, t('migrationExisting', { pointer: migration.pointer, home: migration.home ?? '' }))
-              : null,
-            h('div', { style: styles.hint }, t('migrationInstallerHint')),
-            h(
-              'div',
-              { style: styles.migrationActions },
-              h(
-                'button',
-                {
-                  type: 'button',
-                  style: styles.primarySmall,
-                  disabled: disabled || !migration.canPreserveHome,
-                  onClick: () => migrateDesktop(t, desktop),
-                },
-                state.desktopBusy ? t('updating') : t('migrationUpdate'),
-              ),
-              h(
-                'button',
-                { type: 'button', style: styles.footerLink, disabled, onClick: () => updateDesktop(t) },
-                t('migrationSkip'),
-              ),
-              h(
-                'button',
-                { type: 'button', style: styles.footerLink, disabled, onClick: () => ignoreDesktopUpdate(desktop, t) },
-                t('desktopIgnore'),
-              ),
-            ),
-          )
-        }
-        return h(
+    /** DSH NEXT: running version and the data folder it uses. */
+    function NextBlock({ next, t }) {
+      const [open, setOpen] = React.useState(false)
+      if (next === null || next === undefined) return h('div', { style: styles.muted }, t('nextUnavailable'))
+      const data = next.data
+      return h(
+        'div',
+        { style: styles.nextCard },
+        h(
           'div',
-          { className: 'dsh-updater-row', style: { ...styles.row, ...styles.rowUpdate } },
-          h('span', { style: styles.rowDot, 'aria-hidden': true }),
-          h(
-            'div',
-            { style: styles.rowMain },
-            h('div', { style: styles.rowName }, 'DSH Desktop'),
-            h(
-              'div',
-              { style: styles.rowMeta },
-              h('span', { style: styles.chip }, desktop.currentVersion ?? '?'),
-              h('span', { style: styles.arrow }, '→'),
-              h('span', { style: styles.chipAccent }, desktop.latestVersion ?? '?'),
-              typeof desktop.channel === 'string' ? h('span', { style: styles.channelChip }, desktop.channel) : null,
-              desktopKindLabel(desktop.kind, t) === null ? null : h('span', { style: styles.channelChip }, desktopKindLabel(desktop.kind, t)),
-            ),
-            h('div', { style: styles.hint }, t('desktopHint')),
-          ),
-          h(
-            'div',
-            { style: styles.rowActions },
-            h(
-              'button',
-              {
-                type: 'button',
-                style: styles.rowCta,
-                disabled: state.desktopBusy || state.batchTotal > 0,
-                onClick: () => updateDesktop(t),
-              },
-              state.desktopBusy ? t('updating') : t('desktopUpdate'),
-            ),
-            h(
-              'button',
-              {
-                type: 'button',
-                style: styles.rowLink,
-                disabled: state.desktopBusy || state.batchTotal > 0,
-                onClick: () => ignoreDesktopUpdate(desktop, t),
-              },
-              t('desktopIgnore'),
-            ),
-          ),
-        )
-      }
-      if (desktop.status === 'ignored') {
-        return h(
-          'div',
-          { style: { ...styles.row, ...styles.rowIgnored } },
-          h('span', { style: styles.rowDotIgnored, 'aria-hidden': true }),
-          h(
-            'div',
-            { style: styles.rowMain },
-            h('div', { style: styles.rowName }, 'DSH Desktop'),
-            h(
-              'div',
-              { style: styles.rowMeta },
-              h('span', { style: styles.chip }, desktop.currentVersion ?? '?'),
-              h('span', { style: styles.arrow }, '→'),
-              h('span', { style: styles.chipAccent }, desktop.ignoredVersion ?? desktop.latestVersion ?? '?'),
-              h('span', { style: styles.hint }, t('desktopIgnored')),
-            ),
-          ),
-          h(
-            'button',
-            { type: 'button', style: styles.rowLink, disabled: state.desktopBusy, onClick: () => unignoreDesktopUpdate(t) },
-            state.desktopBusy ? t('updating') : t('unignore'),
-          ),
-        )
-      }
-      if (desktop.status === 'current') {
-        return h(
-          'div',
-          { style: styles.row },
+          { style: styles.nextHead },
           h('span', { style: styles.rowDotOk, 'aria-hidden': true }),
           h(
             'div',
             { style: styles.rowMain },
-            h('div', { style: styles.rowName }, 'DSH Desktop'),
-            h('div', { style: styles.rowMeta }, `${t('desktopCurrent')} · ${desktop.currentVersion ?? '?'}`),
+            h('div', { style: styles.rowName }, 'DSH NEXT'),
+            h(
+              'div',
+              { style: styles.rowMeta },
+              h('span', { style: styles.chip }, next.currentVersion ?? '?'),
+              h('span', { style: styles.footerDot }, '·'),
+              h('span', { style: styles.hint }, `${t('nextData')} ${data?.home ?? ''}`),
+            ),
           ),
-          h('span', { style: styles.rowCheck, 'aria-hidden': true }, '✓'),
-        )
-      }
-      return h(
-        'div',
-        { style: styles.row },
-        h('span', { style: styles.rowDotError, 'aria-hidden': true }),
-        h(
-          'div',
-          { style: styles.rowMain },
-          h('div', { style: styles.rowName }, 'DSH Desktop'),
-          h('div', { style: styles.rowError }, `${t('failed')}: ${desktop.reason ?? ''}`),
+          h(
+            'button',
+            { type: 'button', style: styles.ghostSmall, disabled: !data?.canSetHome, onClick: () => setOpen((value) => !value) },
+            t('nextMigrate'),
+          ),
         ),
+        next.status === 'unavailable'
+          ? h('div', { style: styles.nextWarning }, next.reason ?? t('nextUnavailable'))
+          : null,
+        next.status !== 'unavailable' && data !== null && data !== undefined && data.pointerMatchesHome !== true
+          ? h('div', { style: styles.nextWarning }, t('nextDataMismatch', { pointer: data.pointer ?? data.defaultHome ?? '?' }))
+          : null,
+        open ? h(DataHomeDialog, { next, t, onClose: () => setOpen(false) }) : null,
       )
     }
 
-    /** Shown when a DSH NEXT install exists but points at a different data home. */
-    function DataGuard({ desktop, state, t }) {
-      const data = desktop?.data
-      if (data?.needsRepair !== true) return null
+    /** Choose and apply a new DSH NEXT data folder. */
+    function DataHomeDialog({ next, t, onClose }) {
+      const data = next.data
+      const [target, setTarget] = React.useState('')
+      const [copy, setCopy] = React.useState(false)
+      const [busy, setBusy] = React.useState(false)
+      const [browsing, setBrowsing] = React.useState(false)
+      const [error, setError] = React.useState(null)
+      const [done, setDone] = React.useState(null)
+
+      const browse = async () => {
+        setBrowsing(true)
+        setError(null)
+        try {
+          const result = await callHost('chooseDataFolder', {})
+          if (result?.ok === false) setError(result.error ?? t('nextPickerFailed'))
+          else if (typeof result?.path === 'string' && result.path.length > 0) setTarget(result.path)
+        } catch (cause) {
+          setError(`${t('nextPickerFailed')}: ${cause instanceof Error ? cause.message : String(cause)}`)
+        } finally {
+          setBrowsing(false)
+        }
+      }
+
+      const apply = async () => {
+        if (target.trim().length === 0) return
+        setBusy(true)
+        setError(null)
+        try {
+          const result = await callHost('migrateDataHome', { target: target.trim(), copy })
+          if (result?.ok === false) {
+            setError(result.error ?? t('nextFailed'))
+            return
+          }
+          setDone(result)
+          store.set({ restartRequired: true })
+          await runCheck(true)
+        } catch (cause) {
+          setError(`${t('nextFailed')}: ${cause instanceof Error ? cause.message : String(cause)}`)
+        } finally {
+          setBusy(false)
+        }
+      }
+
       return h(
         'div',
-        { style: styles.dataGuard },
+        { style: styles.dataDialog },
         h(
           'div',
-          { style: styles.rowMain },
-          h('div', { style: styles.rowName }, t('dataTitle')),
-          h('div', { style: styles.migrationText }, t('dataBody', { home: data.home ?? '' })),
+          { style: styles.dataDialogHead },
+          h(
+            'div',
+            { style: styles.rowMain },
+            h('div', { style: styles.rowName }, t('nextMigrateTitle')),
+            h('div', { style: styles.dataNote }, t('nextMigrateBody')),
+          ),
+          h('button', { type: 'button', style: styles.appearanceClose, title: t('nextCancel'), 'aria-label': t('nextCancel'), disabled: busy || browsing, onClick: onClose }, '×'),
         ),
         h(
-          'button',
-          { type: 'button', style: styles.ghostSmall, disabled: state.desktopBusy || state.batchTotal > 0, onClick: () => repairDesktop(t) },
-          state.desktopBusy ? t('dataRepairing') : t('dataRepair'),
+          'div',
+          { style: styles.dataField },
+          h('span', { style: styles.dataLabel }, t('nextSource')),
+          h('span', { style: styles.dataPath }, data?.home ?? '?'),
+        ),
+        h(
+          'div',
+          { style: styles.dataField },
+          h('label', { style: styles.dataLabel, htmlFor: 'dsh-updater-data-target' }, t('nextTarget')),
+          h(
+            'div',
+            { style: styles.dataInputRow },
+            h('input', {
+              id: 'dsh-updater-data-target',
+              type: 'text',
+              value: target,
+              placeholder: 'D:\\DSH-Next',
+              style: styles.dataInput,
+              disabled: busy || done !== null,
+              onChange: (event) => setTarget(event.target.value),
+            }),
+            h(
+              'button',
+              { type: 'button', style: styles.ghostSmall, disabled: busy || browsing || done !== null, onClick: browse },
+              browsing ? t('nextBrowsing') : t('nextBrowse'),
+            ),
+          ),
+        ),
+        h(
+          'label',
+          { style: styles.dataCheckboxRow },
+          h('input', {
+            type: 'checkbox',
+            checked: copy,
+            disabled: busy || done !== null,
+            onChange: (event) => setCopy(event.target.checked),
+          }),
+          h('span', null, t('nextCopy')),
+        ),
+        h('div', { style: styles.dataNote }, copy ? t('nextCopyHint') : t('nextPointerHint')),
+        error === null ? null : h('div', { style: styles.rowError }, error),
+        done === null
+          ? null
+          : h('div', { style: styles.nextDone }, t('nextDone', { home: done.home ?? target })),
+        h(
+          'div',
+          { style: styles.dataActions },
+          h('button', { type: 'button', style: styles.appearanceGhost, disabled: busy || browsing, onClick: onClose }, t('nextCancel')),
+          done === null
+            ? h(
+                'button',
+                { type: 'button', style: styles.primarySmall, disabled: busy || target.trim().length === 0, onClick: apply },
+                busy ? t('nextApplying') : t('nextApply'),
+              )
+            : h('button', { type: 'button', style: styles.primarySmall, onClick: onClose }, t('done')),
         ),
       )
     }
@@ -1171,17 +1077,182 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** The panel-properties popover opened by the three-dot header button. */
+    function AppearanceMenu({ t, appearance, onChange, onReset, onResetPosition, onClose, menuRef }) {
+      const tr = makeT(t)
+      const range = (key, label, limits) =>
+        h(
+          'div',
+          { style: styles.appearanceGroup },
+          h(
+            'div',
+            { style: styles.appearanceLabelRow },
+            h('span', { style: styles.appearanceLabel }, label),
+            h('span', { style: styles.appearanceValue }, `${appearance[key]}px`),
+          ),
+          h('input', {
+            type: 'range',
+            min: limits.min,
+            max: limits.max,
+            step: limits.step,
+            value: appearance[key],
+            'aria-label': label,
+            style: styles.appearanceRange,
+            onChange: (event) => onChange({ [key]: Number(event.target.value) }),
+          }),
+        )
+
+      return h(
+        'div',
+        {
+          className: 'dsh-updater-appearance',
+          ref: menuRef,
+          style: styles.appearanceMenu,
+          role: 'dialog',
+          'aria-label': tr('appearance'),
+          onPointerDown: (event) => event.stopPropagation(),
+          onDoubleClick: (event) => event.stopPropagation(),
+        },
+        h(
+          'div',
+          { style: styles.appearanceHead },
+          h(
+            'div',
+            { style: styles.appearanceTitle },
+            h('strong', { style: styles.appearanceTitleStrong }, tr('appearance')),
+            h('span', { style: styles.appearanceHint }, tr('appearanceHint')),
+          ),
+          h(
+            'button',
+            { type: 'button', style: styles.appearanceClose, title: tr('done'), 'aria-label': tr('done'), onClick: onClose },
+            '×',
+          ),
+        ),
+        range('width', tr('panelWidth'), APPEARANCE_LIMITS.width),
+        range('height', tr('panelHeight'), APPEARANCE_LIMITS.height),
+        h(
+          'div',
+          { style: styles.appearanceGroup },
+          h(
+            'div',
+            { style: styles.appearanceLabelRow },
+            h('span', { style: styles.appearanceLabel }, tr('accentColor')),
+            h('span', { style: styles.appearanceValue }, appearance.accent.toUpperCase()),
+          ),
+          h(
+            'div',
+            { style: styles.swatches },
+            PANEL_ACCENTS.map((preset) =>
+              h(
+                'button',
+                {
+                  key: preset.id,
+                  type: 'button',
+                  style: {
+                    ...styles.swatch,
+                    background: `linear-gradient(135deg, ${preset.accent}, ${preset.accent2})`,
+                    ...(appearance.accent === preset.accent ? styles.swatchSelected : null),
+                  },
+                  title: preset.id,
+                  'aria-label': preset.id,
+                  'aria-pressed': appearance.accent === preset.accent,
+                  onClick: () => onChange({ accent: preset.accent, accent2: preset.accent2 }),
+                },
+              ),
+            ),
+            h(
+              'label',
+              {
+                style: {
+                  ...styles.swatch,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  background: 'conic-gradient(from 210deg, #ff6b9a, #f5b544, #3ecf8e, #46c7f5, #6b8cff, #c86bff, #ff6b9a)',
+                },
+                title: tr('customColor'),
+              },
+              h('input', {
+                type: 'color',
+                value: appearance.accent,
+                'aria-label': tr('customColor'),
+                style: { position: 'absolute', inset: 0, width: '100%', height: '100%', padding: 0, border: 'none', opacity: 0, cursor: 'pointer' },
+                onChange: (event) => onChange({ accent: event.target.value, accent2: event.target.value }),
+              }),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { style: styles.appearanceGroup },
+          h('div', { style: styles.appearanceLabelRow }, h('span', { style: styles.appearanceLabel }, tr('surfaceColor'))),
+          h(
+            'div',
+            { style: styles.surfaceGrid },
+            Object.entries(PANEL_SURFACES).map(([id, surface]) =>
+              h(
+                'button',
+                {
+                  key: id,
+                  type: 'button',
+                  style: { ...styles.surfaceChip, ...(appearance.surface === id ? styles.surfaceChipSelected : null) },
+                  'aria-pressed': appearance.surface === id,
+                  onClick: () => onChange({ surface: id }),
+                },
+                h('span', { style: { ...styles.surfaceDot, background: `linear-gradient(135deg, ${surface.head}, ${surface.bg})` } }),
+                tr(`surface${id.charAt(0).toUpperCase()}${id.slice(1)}`),
+              ),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { style: styles.appearanceGroup },
+          h(
+            'div',
+            { style: styles.appearanceLabelRow },
+            h('span', { style: styles.appearanceLabel }, tr('opacity')),
+            h('span', { style: styles.appearanceValue }, `${Math.round(appearance.opacity * 100)}%`),
+          ),
+          h('input', {
+            type: 'range',
+            min: Math.round(APPEARANCE_LIMITS.opacity.min * 100),
+            max: 100,
+            step: Math.round(APPEARANCE_LIMITS.opacity.step * 100),
+            value: Math.round(appearance.opacity * 100),
+            'aria-label': tr('opacity'),
+            style: styles.appearanceRange,
+            onChange: (event) => onChange({ opacity: Number(event.target.value) / 100 }),
+          }),
+        ),
+        h(
+          'div',
+          { style: styles.appearanceFooter },
+          h('button', { type: 'button', style: styles.appearanceGhost, onClick: onReset }, tr('resetAppearance')),
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: '4px' } },
+            h('button', { type: 'button', style: styles.appearanceGhost, onClick: onResetPosition }, tr('resetPosition')),
+            h('button', { type: 'button', style: styles.appearanceDone, onClick: onClose }, tr('done')),
+          ),
+        ),
+      )
+    }
+
     /** The draggable updater panel. */
     function UpdaterPanel({ t, anchorRef, onClose }) {
       const tr = makeT(t)
       const state = useUpdaterState()
       const panelRef = React.useRef(null)
+      const menuRef = React.useRef(null)
+      const menuButtonRef = React.useRef(null)
       const { position, dragging, startDrag, reset } = useDrag(panelRef, anchorRef ?? null)
+      const [appearance, setAppearance] = React.useState(readAppearance)
+      const [menuOpen, setMenuOpen] = React.useState(false)
       const report = state.report
       const pluginUpdates = updateEntries(report)
       const bypassed = (report?.packages ?? []).filter((entry) => entry.name !== PACKAGE && entryState(entry) === 'bypassed')
       const ignoredEntries = (report?.packages ?? []).filter((entry) => entry.name !== PACKAGE && entry.status === 'ignored')
-      const busyAny = Object.keys(state.busy).length > 0 || state.desktopBusy || state.batchTotal > 0
+      const busyAny = Object.keys(state.busy).length > 0 || state.batchTotal > 0
       const checking = state.status === 'checking'
       const updating = state.updateRequestId !== null || state.batchTotal > 0
       const fraction = progressFraction(state)
@@ -1196,18 +1267,66 @@ window.__ModuleLoader__.load({
             })
           : `${state.updateName ?? ''} · ${stageLabel}`
 
-      const panelStyle = position === null
-        ? { ...styles.panel, left: '12px', bottom: '96px' }
-        : { ...styles.panel, left: `${position.left}px`, top: `${position.top}px` }
+      const surface = PANEL_SURFACES[appearance.surface] ?? PANEL_SURFACES.navy
+      const panelStyle = {
+        ...styles.panel,
+        ...(position === null ? { left: '12px', bottom: '96px' } : { left: `${position.left}px`, top: `${position.top}px` }),
+        width: position === null
+          ? `min(${appearance.width}px, calc(100vw - 24px))`
+          : `min(${appearance.width}px, calc(100vw - ${Math.max(12, position.left)}px - 8px))`,
+        maxHeight: position === null
+          ? `min(${appearance.height}px, calc(100vh - 120px))`
+          : `min(${appearance.height}px, calc(100vh - ${Math.max(12, position.top)}px - 8px))`,
+        opacity: appearance.opacity,
+        '--upd-bg': surface.bg,
+        '--upd-head': surface.head,
+        '--upd-row': surface.row,
+        '--upd-row-hover': surface.rowHover,
+        '--upd-border': surface.border,
+        '--upd-border-strong': surface.borderStrong,
+        '--upd-accent': appearance.accent,
+        '--upd-accent-2': appearance.accent2,
+        '--upd-glow': hexToRgba(appearance.accent, 0.16),
+        '--upd-shadow': hexToRgba(appearance.accent, 0.35),
+        '--upd-shadow-ring': hexToRgba(appearance.accent, 0.18),
+        '--upd-shadow-soft': hexToRgba(appearance.accent, 0.25),
+      }
 
-      /** Escape closes the panel; the sidebar entry stays as the way back in. */
+      const changeAppearance = (patch) => {
+        setAppearance((current) => {
+          const next = sanitizeAppearance({ ...current, ...patch })
+          writeAppearance(next)
+          return next
+        })
+      }
+      const resetAppearance = () => {
+        const next = { ...APPEARANCE_DEFAULT }
+        writeAppearance(next)
+        setAppearance(next)
+      }
+
+      /** Escape closes the popover first, then the panel; the sidebar stays as the way back in. */
       React.useEffect(() => {
         const onKeyDown = (event) => {
-          if (event.key === 'Escape') onClose()
+          if (event.key !== 'Escape') return
+          if (menuOpen) setMenuOpen(false)
+          else onClose()
         }
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
-      }, [onClose])
+      }, [onClose, menuOpen])
+
+      /** A click outside the popover and its trigger dismisses it. */
+      React.useEffect(() => {
+        if (!menuOpen) return undefined
+        const onPointerDown = (event) => {
+          if (menuRef.current?.contains(event.target) === true) return
+          if (menuButtonRef.current?.contains(event.target) === true) return
+          setMenuOpen(false)
+        }
+        document.addEventListener('pointerdown', onPointerDown)
+        return () => document.removeEventListener('pointerdown', onPointerDown)
+      }, [menuOpen])
 
       const aside = h(
         'div',
@@ -1234,11 +1353,12 @@ window.__ModuleLoader__.load({
         { className: 'dsh-updater-panel', ref: panelRef, style: panelStyle, role: 'dialog', 'aria-label': tr('title') },
         h('style', null, `
           .dsh-updater-panel * { box-sizing: border-box; }
-          .dsh-updater-panel .dsh-updater-row:hover { background: #232a39; }
-          .dsh-updater-panel .dsh-updater-close:hover { background: #232a39; color: #eef2f9; }
+          .dsh-updater-panel .dsh-updater-row:hover { background: var(--upd-row-hover, #232a39); }
+          .dsh-updater-panel .dsh-updater-close:hover,
+          .dsh-updater-panel .dsh-updater-menu-button:hover { background: var(--upd-row-hover, #232a39); color: var(--upd-text, #eef2f9); }
           .dsh-updater-panel button:hover:not(:disabled) { filter: brightness(1.04); }
           .dsh-updater-panel button:disabled { cursor: default; opacity: .55; }
-          .dsh-updater-panel button:focus-visible { outline: 2px solid #6b8cff; outline-offset: 1px; }
+          .dsh-updater-panel button:focus-visible { outline: 2px solid var(--upd-accent, #6b8cff); outline-offset: 1px; }
           .dsh-updater-spin { animation: dsh-updater-spin .9s linear infinite; }
           @keyframes dsh-updater-spin { to { transform: rotate(360deg); } }
           .dsh-updater-progress-fill { position: relative; overflow: hidden; }
@@ -1259,7 +1379,7 @@ window.__ModuleLoader__.load({
             .dsh-updater-spin { animation: none; }
           }
           .dsh-updater-panel ::-webkit-scrollbar { width: 8px; height: 8px; }
-          .dsh-updater-panel ::-webkit-scrollbar-thumb { background: #3a4356; border-radius: 8px; }
+          .dsh-updater-panel ::-webkit-scrollbar-thumb { background: var(--upd-border-strong, #3a4356); border-radius: 8px; }
         `),
         h(
           'header',
@@ -1278,9 +1398,27 @@ window.__ModuleLoader__.load({
               { style: styles.titleRow },
               h('strong', { style: styles.title }, tr('title')),
             ),
-            h('span', { style: styles.subtitle }, tr('subtitle')),
           ),
-          h('span', { style: styles.grip, 'aria-hidden': true }, '•••'),
+          h(
+            'button',
+            {
+              ref: menuButtonRef,
+              type: 'button',
+              className: 'dsh-updater-menu-button',
+              style: { ...styles.menuButton, ...(menuOpen ? styles.menuButtonOpen : null) },
+              title: tr('appearance'),
+              'aria-label': tr('appearance'),
+              'aria-haspopup': 'dialog',
+              'aria-expanded': menuOpen,
+              onPointerDown: (event) => event.stopPropagation(),
+              onDoubleClick: (event) => event.stopPropagation(),
+              onClick: (event) => {
+                event.stopPropagation()
+                setMenuOpen((current) => !current)
+              },
+            },
+            '•••',
+          ),
           h(
             'button',
             {
@@ -1298,6 +1436,18 @@ window.__ModuleLoader__.load({
             '×',
           ),
         ),
+        menuOpen ? h('div', { style: styles.appearanceBackdrop, onPointerDown: () => setMenuOpen(false) }) : null,
+        menuOpen
+          ? h(AppearanceMenu, {
+              t: tr,
+              appearance,
+              onChange: changeAppearance,
+              onReset: resetAppearance,
+              onResetPosition: reset,
+              onClose: () => setMenuOpen(false),
+              menuRef,
+            })
+          : null,
         updating
           ? h(
               'div',
@@ -1331,16 +1481,7 @@ window.__ModuleLoader__.load({
             ? h('div', { key: 'check-error', style: styles.statusBanner }, `${tr('failed')}: ${state.error ?? ''}`)
             : null,
           state.message === null ? null : h('div', { key: 'message', style: styles.statusBanner }, state.message),          state.restartRequired
-            ? h(
-                'div',
-                { key: 'restart', style: styles.restartBanner },
-                h('span', { style: styles.restartText }, tr('restartHint')),
-                h(
-                  'button',
-                  { type: 'button', style: styles.primarySmall, disabled: state.restartBusy, onClick: () => restartDesktop(tr) },
-                  state.restartBusy ? tr('restarting') : tr('restartNow'),
-                ),
-              )
+            ? h('div', { key: 'restart', style: styles.restartBanner }, h('span', { style: styles.restartText }, tr('restartHint')))
             : null,
           report === null
             ? h(
@@ -1370,9 +1511,8 @@ window.__ModuleLoader__.load({
                     ),
                 h(
                   Section,
-                  { key: 'desktop', title: tr('desktopTitle') },
-                  h(DesktopBlock, { desktop: report.desktop, state, t: tr }),
-                  h(DataGuard, { desktop: report.desktop, state, t: tr }),
+                  { key: 'next', title: tr('nextTitle') },
+                  h(NextBlock, { next: report.next, t: tr }),
                 ),
                 report.engine === null || report.engine === undefined
                   ? null
@@ -1388,8 +1528,6 @@ window.__ModuleLoader__.load({
             { style: styles.footerMeta },
             h('span', { style: styles.footerStatusDot, 'aria-hidden': true }),
             report === null ? '' : tr('lastChecked', { time: new Date(report.checkedAt).toLocaleTimeString() }),
-            h('span', { style: styles.footerDot }, '·'),
-            tr('noTokens'),
           ),
           h(
             'div',
@@ -1474,17 +1612,17 @@ window.__ModuleLoader__.load({
      * token and turns the panel pale gray on light profiles.
      */
     const PANEL_PALETTE = {
-      bg: '#151923',
-      head: '#1a1f2b',
-      row: '#1e2431',
-      rowHover: '#232a39',
-      border: '#2a3140',
-      borderStrong: '#3a4356',
-      text: '#eef2f9',
-      muted: '#98a3b6',
-      faint: '#7d879a',
-      brand: '#6b8cff',
-      accent: '#8f6bff',
+      bg: 'var(--upd-bg, #151923)',
+      head: 'var(--upd-head, #1a1f2b)',
+      row: 'var(--upd-row, #1e2431)',
+      rowHover: 'var(--upd-row-hover, #232a39)',
+      border: 'var(--upd-border, #2a3140)',
+      borderStrong: 'var(--upd-border-strong, #3a4356)',
+      text: 'var(--upd-text, #eef2f9)',
+      muted: 'var(--upd-muted, #98a3b6)',
+      faint: 'var(--upd-faint, #7d879a)',
+      brand: 'var(--upd-accent, #6b8cff)',
+      accent: 'var(--upd-accent-2, #8f6bff)',
       green: '#3ecf8e',
       amber: '#f5b544',
       red: '#ff6b6b',
@@ -1498,7 +1636,7 @@ window.__ModuleLoader__.load({
         flexDirection: 'column',
         pointerEvents: 'auto',
         background: PANEL_PALETTE.bg,
-        backgroundImage: 'radial-gradient(120% 80% at 100% 0%, rgba(107, 140, 255, 0.14), transparent 62%)',
+        backgroundImage: 'radial-gradient(120% 80% at 100% 0%, var(--upd-glow, rgba(107, 140, 255, 0.14)), transparent 62%)',
         color: PANEL_PALETTE.text,
         border: `1px solid ${PANEL_PALETTE.border}`,
         borderRadius: '16px',
@@ -1518,7 +1656,115 @@ window.__ModuleLoader__.load({
         touchAction: 'none',
         userSelect: 'none',
       },
-      grip: { color: PANEL_PALETTE.muted, fontSize: '10px', letterSpacing: '2px', lineHeight: 1, opacity: 0.8, flex: 'none' },
+      menuButton: {
+        ...buttonBase,
+        width: '26px',
+        height: '24px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+        background: 'transparent',
+        color: PANEL_PALETTE.muted,
+        fontSize: '12px',
+        letterSpacing: '1.5px',
+        lineHeight: 1,
+        flex: 'none',
+      },
+      menuButtonOpen: { background: PANEL_PALETTE.row, color: PANEL_PALETTE.text },
+      appearanceBackdrop: {
+        position: 'absolute',
+        inset: '54px 0 0',
+        background: 'rgba(4, 6, 10, 0.58)',
+        zIndex: 4,
+      },
+      appearanceMenu: {
+        position: 'absolute',
+        top: '54px',
+        right: '10px',
+        bottom: '10px',
+        width: 'calc(100% - 20px)',
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '11px',
+        padding: '12px',
+        background: PANEL_PALETTE.head,
+        border: `1px solid ${PANEL_PALETTE.borderStrong}`,
+        borderRadius: '12px',
+        boxShadow: '0 18px 50px rgba(0, 0, 0, 0.5)',
+        zIndex: 5,
+      },
+      appearanceHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' },
+      appearanceTitle: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
+      appearanceTitleStrong: { fontSize: '12.5px', fontWeight: 700, color: PANEL_PALETTE.text },
+      appearanceHint: { fontSize: '10px', color: PANEL_PALETTE.muted },
+      appearanceClose: {
+        ...buttonBase,
+        width: '20px',
+        height: '20px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+        background: 'transparent',
+        color: PANEL_PALETTE.muted,
+        fontSize: '14px',
+        lineHeight: 1,
+      },
+      appearanceGroup: { display: 'flex', flexDirection: 'column', gap: '5px' },
+      appearanceLabelRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' },
+      appearanceLabel: { fontSize: '10.5px', color: PANEL_PALETTE.muted, fontWeight: 600 },
+      appearanceValue: { fontSize: '10.5px', color: PANEL_PALETTE.text, fontVariantNumeric: 'tabular-nums' },
+      appearanceRange: { width: '100%', accentColor: PANEL_PALETTE.brand, cursor: 'pointer', margin: '1px 0' },
+      swatches: { display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' },
+      swatch: {
+        ...buttonBase,
+        width: '22px',
+        height: '22px',
+        padding: 0,
+        borderRadius: '999px',
+        border: '2px solid transparent',
+        cursor: 'pointer',
+        flex: 'none',
+      },
+      swatchSelected: { boxShadow: `0 0 0 2px ${PANEL_PALETTE.head}, 0 0 0 4px ${PANEL_PALETTE.text}` },
+      surfaceGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' },
+      surfaceChip: {
+        ...buttonBase,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '6px 7px',
+        borderRadius: '8px',
+        border: `1px solid ${PANEL_PALETTE.border}`,
+        background: PANEL_PALETTE.row,
+        color: PANEL_PALETTE.text,
+        fontSize: '10.5px',
+        textAlign: 'left',
+        cursor: 'pointer',
+      },
+      surfaceChipSelected: { borderColor: PANEL_PALETTE.brand, boxShadow: `inset 0 0 0 1px ${PANEL_PALETTE.brand}` },
+      surfaceDot: { width: '12px', height: '12px', borderRadius: '4px', border: '1px solid rgba(255, 255, 255, 0.14)', flex: 'none' },
+      appearanceFooter: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', paddingTop: '2px', marginTop: 'auto', flexWrap: 'wrap' },
+      appearanceGhost: {
+        ...buttonBase,
+        padding: '5px 8px',
+        fontSize: '10.5px',
+        background: 'transparent',
+        borderColor: 'transparent',
+        color: PANEL_PALETTE.muted,
+      },
+      appearanceDone: {
+        ...buttonBase,
+        padding: '5px 10px',
+        fontSize: '10.5px',
+        fontWeight: 600,
+        borderRadius: '7px',
+        background: `linear-gradient(135deg, ${PANEL_PALETTE.brand}, ${PANEL_PALETTE.accent})`,
+        borderColor: 'transparent',
+        color: '#fff',
+      },
       titleBlock: { display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0, flex: 1 },
       titleRow: { display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 },
       mark: {
@@ -1533,10 +1779,9 @@ window.__ModuleLoader__.load({
         fontSize: '13px',
         lineHeight: 1,
         flex: 'none',
-        boxShadow: '0 6px 16px rgba(107, 140, 255, 0.35)',
+        boxShadow: '0 6px 16px var(--upd-shadow, rgba(107, 140, 255, 0.35))',
       },
       title: { fontSize: '13.5px', fontWeight: 650, whiteSpace: 'nowrap', color: PANEL_PALETTE.text },
-      subtitle: { fontSize: '10.5px', color: PANEL_PALETTE.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
       close: {
         ...buttonBase,
         width: '24px',
@@ -1613,30 +1858,61 @@ window.__ModuleLoader__.load({
         borderColor: 'transparent',
         color: PANEL_PALETTE.muted,
       },
-      migrationCard: {
+      nextCard: {
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'stretch',
         gap: '7px',
         padding: '10px',
-        margin: '0',
         borderRadius: '10px',
-        background: 'rgba(245, 181, 68, 0.08)',
-        border: '1px solid rgba(245, 181, 68, 0.32)',
+        background: PANEL_PALETTE.row,
+        border: `1px solid ${PANEL_PALETTE.border}`,
       },
-      migrationText: { fontSize: '11px', color: PANEL_PALETTE.muted, lineHeight: 1.5, wordBreak: 'break-word' },
-      migrationNote: { fontSize: '10.5px', color: PANEL_PALETTE.text, lineHeight: 1.45, wordBreak: 'break-word' },
-      migrationActions: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' },
-      dataGuard: {
+      nextHead: { display: 'flex', alignItems: 'center', gap: '10px' },
+      nextWarning: {
+        fontSize: '10.5px',
+        color: PANEL_PALETTE.amber,
+        lineHeight: 1.5,
+        wordBreak: 'break-word',
+        padding: '6px 8px',
+        borderRadius: '8px',
+        background: 'rgba(245, 181, 68, 0.08)',
+        border: '1px solid rgba(245, 181, 68, 0.3)',
+      },
+      dataDialog: {
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        flexDirection: 'column',
         gap: '8px',
-        padding: '9px 10px',
+        padding: '10px',
         borderRadius: '10px',
-        background: 'rgba(245, 181, 68, 0.08)',
-        border: '1px dashed rgba(245, 181, 68, 0.35)',
+        background: PANEL_PALETTE.head,
+        border: `1px solid ${PANEL_PALETTE.border}`,
       },
+      dataDialogHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' },
+      dataField: { display: 'flex', flexDirection: 'column', gap: '4px' },
+      dataLabel: { fontSize: '10.5px', color: PANEL_PALETTE.muted, fontWeight: 600 },
+      dataNote: { fontSize: '10.5px', color: PANEL_PALETTE.faint, lineHeight: 1.5, wordBreak: 'break-word' },
+      dataPath: {
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: '10.5px',
+        color: PANEL_PALETTE.text,
+        lineHeight: 1.45,
+        wordBreak: 'break-all',
+      },
+      dataInputRow: { display: 'flex', alignItems: 'center', gap: '6px' },
+      dataInput: {
+        flex: 1,
+        minWidth: 0,
+        font: 'inherit',
+        fontSize: '11px',
+        padding: '6px 8px',
+        borderRadius: '7px',
+        border: `1px solid ${PANEL_PALETTE.border}`,
+        background: PANEL_PALETTE.row,
+        color: PANEL_PALETTE.text,
+      },
+      dataCheckboxRow: { display: 'flex', alignItems: 'center', gap: '7px', fontSize: '10.5px', color: PANEL_PALETTE.text, cursor: 'pointer' },
+      nextDone: { fontSize: '10.5px', color: PANEL_PALETTE.green, lineHeight: 1.5, wordBreak: 'break-word' },
+      dataActions: { display: 'flex', justifyContent: 'flex-end', gap: '6px', paddingTop: '2px' },
       rowDot: {
         width: '7px',
         height: '7px',
@@ -1651,7 +1927,7 @@ window.__ModuleLoader__.load({
         borderRadius: '999px',
         flex: 'none',
         background: PANEL_PALETTE.brand,
-        boxShadow: '0 0 0 3px rgba(107, 140, 255, 0.18)',
+        boxShadow: '0 0 0 3px var(--upd-shadow-ring, rgba(107, 140, 255, 0.18))',
       },
       rowDotQueued: {
         width: '7px',
@@ -1716,15 +1992,6 @@ window.__ModuleLoader__.load({
         color: PANEL_PALETTE.brand,
         fontWeight: 600,
       },
-      channelChip: {
-        padding: '0 6px',
-        borderRadius: '999px',
-        background: PANEL_PALETTE.row,
-        border: `1px solid ${PANEL_PALETTE.border}`,
-        color: PANEL_PALETTE.muted,
-        fontSize: '10px',
-        lineHeight: '15px',
-      },
       okDot: { color: PANEL_PALETTE.green, fontWeight: 700 },
       arrow: { color: PANEL_PALETTE.muted, fontSize: '10px' },
       hint: { fontSize: '10.5px', color: PANEL_PALETTE.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
@@ -1784,7 +2051,7 @@ window.__ModuleLoader__.load({
         color: PANEL_PALETTE.muted,
         fontVariantNumeric: 'tabular-nums',
       },
-      progressTrack: { height: '6px', borderRadius: '999px', background: '#252c3a', overflow: 'hidden' },
+      progressTrack: { height: '6px', borderRadius: '999px', background: 'var(--upd-border, #252c3a)', overflow: 'hidden' },
       progressFill: {
         height: '100%',
         borderRadius: '999px',
@@ -1805,7 +2072,7 @@ window.__ModuleLoader__.load({
         width: '16px',
         height: '16px',
         borderRadius: '999px',
-        border: '2px solid #323b4d',
+        border: '2px solid var(--upd-border-strong, #323b4d)',
         borderTopColor: PANEL_PALETTE.brand,
         display: 'inline-block',
       },
@@ -1838,7 +2105,7 @@ window.__ModuleLoader__.load({
         background: `linear-gradient(135deg, ${PANEL_PALETTE.brand}, ${PANEL_PALETTE.accent})`,
         borderColor: 'transparent',
         color: '#fff',
-        boxShadow: '0 6px 14px rgba(107, 140, 255, 0.25)',
+        boxShadow: '0 6px 14px var(--upd-shadow-soft, rgba(107, 140, 255, 0.25))',
       },
       rowCta: {
         ...buttonBase,

@@ -139,6 +139,53 @@ imported from F:\Program Files\DSH\plugins\dsh-plugin-updater\protocol.js
 - `node .check/selfcheck.mjs` 增加 release-line / release-kind、临时 APPDATA 的 handoff 写入与 ignore 列表测试；无 `@deepseek-ai/cordis` 时也能构造 Host 服务。
 - `render-check` 覆盖迁移按钮（先 `prepareDesktopUpdate`，后 `/api/desktop/updates/check`）以及插件/桌面端的忽略按钮。
 
+## 2026-10-28 · 0.3.5 运行中更新、面板设置与只支持 DSH NEXT
+
+目标：修复“今天全部更新都失败”，让面板右上角的三个点可以调整面板属性，并停止在 DSH Desktop 兼容层上继续叠加分支。
+
+事故链（来自 `<DSH_HOME>/plugin-updater/update-trace.log`）：
+
+1. 面板对 `@xmanrui/dsh-im`、`cc-safety-net`、`dsh-ops` 依次点击更新。
+2. 每次都是 `update:remove-failed`，`application=failed`，`message=bundle-in-use`。
+3. `removeBundle` 在校验“模块是否还在运行”之前，已经执行了 `selectBundle(name, false)` + reload；因此失败后三个 bundle 已经从 `dsh.profile.bundles` 消失，但进程里仍加载着旧模块。
+4. 结果是更新全红，而且下一次启动会少三个插件。
+
+原因：DSH NEXT 把宿主模块保留到进程退出；HMR 下 `removeBundle` 无法卸载正在运行的宿主 bundle，只能拒绝。0.3.4 把拒绝当普通失败，没有恢复选中，也没有覆盖安装路径。
+
+修复：
+
+- 更新前记录 `wasSelected`；`removeBundle` 失败后调用 `restoreBundleSelection` 恢复选中（优先 `setBundleEnabled`，失败则原子修改 `dsh.profile.bundles`）。
+- `stop-profile`：直接 `installBundle(target)` 覆盖安装（无 HMR 的官方语义），成功返回 `restart-required`。
+- `bundle-in-use`：暂时从 profile 依赖中隐藏该包，让 `installBundle` 跳过 HMR 的 `already-installed` 守卫；pnpm 安装后补回依赖。返回 `fallback: 'overwrite-running'` 和 `restartReason: 'host-module'`。
+- 覆盖安装失败时，在依赖仍隐藏的状态下 `restoreInstall` 旧版本，再写回原始清单文本与选中状态；不会留下“依赖在、文件没了”或“选中没了”的半状态。
+- 客户端把 `bundle-in-use` 从“重启后再试”改成真实的“已替换，重启后生效”。
+
+面板设置：
+
+- 标题栏右侧的伪装饰 `•••` 换成真正的按钮（`aria-haspopup="dialog"`）。
+- 打开全宽设置页：宽度 320–560px、最大高度 380–820px、5 套强调色 + 自定义颜色、4 套深色表面、不透明度 72%–100%、恢复默认、复位位置。
+- 设置持久化到 `localStorage`，面板根节点写入 CSS 变量；Logo、主按钮、进度条、运行点和焦点环一起换色。
+- 点击遮罩、`Esc` 或「完成」关闭；`Esc` 先关设置页再关面板。
+- 删掉标题栏副标题与页脚的「不消耗 token」。
+
+DSH Desktop 退场与数据迁移：
+
+- DSH NEXT 没有 `/api/desktop/updates/check` 与 `/api/desktop/restart`；旧的桌面端版本服务还会把 stable 与 `-next` 放在一起比较。继续为两套产品线维护分支，只会让代码和失败面越来越大。
+- 0.3.5 起只支持 DSH NEXT：移除 `fetchDesktopVersion`、`releaseLine` / `releaseKind`、桌面端迁移卡片、桌面端忽略、`prepareDesktopUpdate` / `repairDesktopData` 和旧的 `/api/desktop/*` 调用。
+- 面板保留 **DSH NEXT** 卡片：显示当前版本、数据目录和指针不一致提示。
+- 新增 **迁移数据目录**：目标路径可手动输入或点 **浏览…** 调 Windows 原生 `FolderBrowserDialog`；支持只切换指针，或复制 `profiles` / `sessions` / `storages` / 根配置后再切换。
+- 复制失败会删除本次创建的目标目录且不写指针；源目录永远不删除；指针文件先备份为 `.bak-时间戳`。
+- 迁移记录写入 `<DSH_HOME>/plugin-updater/data-home.json` 与 `restore-data-home.ps1`。
+- 重启按钮移除：DSH NEXT 自己提供标题栏重启，面板只提示「重启 DSH NEXT 后生效」。
+
+验证：
+
+- `selfcheck` 新增三个临时 profile 用例：`bundle-in-use` 成功覆盖、覆盖失败回滚、`stop-profile` 覆盖安装；断言依赖在安装期间确实被隐藏、选中被恢复、失败后版本与清单回到原样。临时用例显式传 `profileDir`，避免 `DSH_PROFILE_DIR` 把测试写进真实 profile。
+- `render-check` 断言三个点按钮存在、带 `aria-haspopup` / `aria-expanded`；CSS 自定义属性与 range 输入加入白名单。
+- `selfcheck` 新增临时 APPDATA + 临时 source home 的迁移用例：复制模式、指针模式、空目录拒绝、指针文件与恢复脚本。
+- `render-check` 改查 DSH NEXT 卡片、版本、数据目录与迁移按钮；拖动用例改用插件更新让面板自动打开。
+- 用真实 `client.js` + React 18 + Edge 无头渲染出默认、自定义、设置页和数据迁移对话框截图，检查换色、宽度、遮罩与长文案换行。
+
 ## 经验总结
 
 1. Cordis 里访问服务要么 `inject`，要么 `ctx.get()`；直接点属性会抛错。
@@ -147,5 +194,7 @@ imported from F:\Program Files\DSH\plugins\dsh-plugin-updater\protocol.js
 4. 替换已安装插件的代码/新增组件行后，重启是必需的。
 5. 更新失败要恢复旧版本并把原因显示在你能看到的地方。
 6. 进度事件是“锦上添花”，本地阶段兜底能让进度条永远可用。
-7. 跨产品升级先迁移“数据目录指针”，不要假设新版本会沿用旧版本的 home。
+7. 迁移数据目录先写临时目标、校验、再写指针；源目录永远不要先删。
 8. 从 profile 外加载的 `link:` 插件不要静态 import 内核包；用可选加载或本地兜底，否则换一个宿主就会在启动阶段失败。
+9. 任何“先取消选中、再卸载”的操作，失败路径都必须恢复选中；否则失败一次就会在下次启动时丢插件。
+10. 画成 `•••` 的装饰如果看起来像按钮，就把它做成按钮；面板设置要能看见、能撤回。
