@@ -51,7 +51,7 @@ dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater
 固定到某个版本：
 
 ```bash
-dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.5
+dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.6
 ```
 
 安装完成后重启 DSH NEXT。插件会出现在侧边栏底部（设置按钮旁），显示「查看更新」。
@@ -169,7 +169,7 @@ DSH NEXT 默认使用 `~/.dsh`，只读取自己的位置文件。面板的 **DS
 
 **怎么固定版本或回滚？**
 
-安装时用 `#v0.3.5` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH NEXT。
+安装时用 `#v0.3.6` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH NEXT。
 
 ## 兼容性与限制
 
@@ -190,7 +190,7 @@ DSH NEXT 默认使用 `~/.dsh`，只读取自己的位置文件。面板的 **DS
 ## 项目文档
 
 - [架构说明](docs/ARCHITECTURE.md)：Host/Client 分工、插件更新、数据迁移与进度事件。
-- [开发历程](docs/BUILD-LOG.md)：从 0.1.0 到 0.3.5 的真实问题与修复记录。
+- [开发历程](docs/BUILD-LOG.md)：从 0.1.0 到 0.3.6 的真实问题与修复记录。
 - [贡献指南](CONTRIBUTING.md)：本地开发、检查与 PR 约定。
 
 ## 参与贡献

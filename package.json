@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-updater",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Startup update checks for installed DSH NEXT plugins and the core, with panel appearance settings, live progress, one-click updates, a data-folder migration sheet and per-version ignore — no agent calls, no token spend.",
   "license": "MIT",
   "author": "TT10-24 (https://github.com/TT10-24)",
