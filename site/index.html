@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>dsh-plugin-updater — 你的 DSH 更新管家</title>
-  <meta name="description" content="在 DSH 启动时检查插件、DSH Desktop 与内核更新。可拖动面板、实时进度、一键全部更新，全程不消耗 token。">
+  <meta name="description" content="在 DSH 启动时检查插件、DSH Desktop 与内核更新。可拖动面板支持三点调整大小与配色，实时进度、一键全部更新，全程不消耗 token。">
   <meta property="og:title" content="dsh-plugin-updater — 你的 DSH 更新管家">
   <meta property="og:description" content="插件、桌面端、内核，一次检查完。零 token，带进度条与一键全部更新。">
   <meta property="og:type" content="website">
@@ -87,7 +87,7 @@
                 <path d="M5 15a7 7 0 0 0 14 0"></path>
               </svg>
             </span>
-            <span class="panel-heading"><strong>更新检查</strong><small>拖动标题栏移动</small></span>
+            <span class="panel-heading"><strong>更新检查</strong><small>拖动移动，三点设置</small></span>
             <span class="panel-grip" aria-hidden="true">•••</span>
           </div>
           <div class="panel-progress">
@@ -175,8 +175,8 @@
         </article>
         <article class="feature">
           <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h14M5 15h14"></path><path d="m9 5-4 4 4 4"></path><path d="m15 11 4 4-4 4"></path></svg></span>
-          <h3>可拖动，不挡路</h3>
-          <p>拖标题栏移动、双击复位、记住位置、Esc 关闭。它不会压住你的输入框。</p>
+          <h3>可拖动，可换肤</h3>
+          <p>拖标题栏移动、双击复位、记住位置、Esc 关闭；点右上角三个点还能调宽度、强调色、背景和不透明度，设置会记住。</p>
         </article>
       </div>
     </section>
@@ -216,7 +216,7 @@
         <div class="panel large" aria-hidden="true">
           <div class="panel-titlebar">
             <span class="panel-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v9"></path><path d="m8 8 4-4 4 4"></path><path d="M5 15a7 7 0 0 0 14 0"></path></svg></span>
-            <span class="panel-heading"><strong>更新检查</strong><small>拖动标题栏移动</small></span>
+            <span class="panel-heading"><strong>更新检查</strong><small>拖动移动，三点设置</small></span>
             <span class="panel-grip">•••</span>
           </div>
           <div class="panel-warning"><strong>有 5 个插件可以更新</strong><span>完成后需要重启 DSH</span><button class="mini solid" type="button">立即重启 DSH</button></div>
@@ -261,9 +261,9 @@
           <span class="badge subtle">固定版本</span>
           <h3>锁在某个 Release</h3>
           <p>适合想稳定复现的环境。把版本号换成你需要的 tag：</p>
-          <div class="command small" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4">
-            <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4</code>
-            <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4">复制</button>
+          <div class="command small" data-command="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.5">
+            <code>dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.5</code>
+            <button class="copy" type="button" data-copy="dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.5">复制</button>
           </div>
           <p class="fine">安装 / 更新后重启 DSH Desktop。插件会出现在侧边栏底部，显示「查看更新」。</p>
         </article>
@@ -286,7 +286,7 @@
         </details>
         <details>
           <summary>更新失败会怎样？</summary>
-          <p>插件会尝试恢复旧版本，并把原因显示在对应插件行下方。你可以重启后再试，或到插件页手动批准构建脚本。</p>
+          <p>插件会尝试恢复旧版本，并把原因显示在对应插件行下方。DSH NEXT 里遇到无法热卸载的宿主插件时，会自动改为覆盖安装并提示重启；失败仍会回滚，也可以到插件页手动批准构建脚本。</p>
         </details>
         <details>
           <summary>普通 Web 环境能用吗？</summary>
@@ -298,7 +298,7 @@
         </details>
         <details>
           <summary>怎么固定版本或回滚？</summary>
-          <p>安装时用 <code>#v0.3.4</code> 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。</p>
+          <p>安装时用 <code>#v0.3.5</code> 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。</p>
         </details>
       </div>
     </section>

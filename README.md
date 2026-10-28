@@ -26,6 +26,8 @@
 - **更新即消失**：成功的插件不会再闪回“更新”按钮。
 - **重启按钮**：需要重启时，直接点「立即重启 DSH」。
 - **可拖动面板**：拖动标题栏移动、双击复位、记住位置、`Esc` 关闭。
+- **面板设置**：点标题栏右侧的 **⋯**，调整宽度、最大高度、强调色、背景和不透明度；设置会记住，也能一键复位。
+- **运行中也能更新**：DSH NEXT 拒绝热卸载的宿主插件会自动改为覆盖安装，并提示重启后生效，不再整批失败。
 - **零 token**：检查只是普通 HTTPS 请求；更新交给 DSH 自己的插件管理器与 pnpm。
 - **中英文界面**：跟随你的 DSH 语言。
 
@@ -48,7 +50,7 @@ dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater
 固定到某个版本：
 
 ```bash
-dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.4
+dsh plugin --profile desktop add github:TT10-24/dsh-plugin-updater#v0.3.5
 ```
 
 安装完成后重启 DSH Desktop。插件会出现在侧边栏底部（设置按钮旁），显示「查看更新」。
@@ -68,9 +70,22 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 3. 单个插件点「更新」；多个插件点「全部更新 (N)」。
 4. 面板顶部会显示实时进度条和 pnpm 日志末行。
 5. 更新成功的插件立即消失；如果需要重启，点「立即重启 DSH」。
-6. 面板可以拖到任意位置，位置会被记住；双击标题栏复位。
+6. 点面板右上角的 **⋯** 打开面板设置：拖动宽度、最大高度和不透明度，选择强调色与背景；**复位位置** 会把面板放回侧边栏旁。
+7. 面板可以拖到任意位置，位置会被记住；双击标题栏复位。
 
 > 更新已安装插件后，DSH Desktop 需要重启才能加载新的代码或新增组件行。这是 DSH 插件替换机制的限制，不是插件本身的问题。
+
+## 面板设置
+
+点标题栏右侧的 **⋯** 打开设置页，所有改动即时生效：
+
+- **宽度** 320–560px，**最大高度** 380–820px；内容超出时在面板内部滚动。
+- **强调色** 内置靛蓝、翠绿、琥珀、玫红、青蓝五套，也可以点最右侧的彩色圆点自选颜色；它会影响 Logo、主按钮、进度条和运行状态点。
+- **背景** 内置深海军蓝、石墨灰、梅子紫、森林绿四套深色表面，不会跟随浅色主题变白。
+- **不透明度** 72%–100%，适合把面板压在编辑器或网页上。
+- **恢复默认** / **复位位置** 随时回到初始大小与侧边栏旁的默认位置。
+
+设置保存在浏览器本地（`dsh-plugin-updater:panel-appearance`），不会上传，也不会消耗 token。
 
 ## 配置
 
@@ -135,7 +150,9 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 
 **点「更新」会发生什么？**
 
-插件先卸载旧版本，再安装目标版本。如果安装失败，它会自动恢复旧版本，并把原因显示在对应插件行下方。DSH 的 `installBundle` 本身是“新增插件”语义，直接安装已存在的包会被拒绝，所以必须走 remove + install。
+插件先尝试卸载旧版本，再安装目标版本。如果安装失败，它会自动恢复旧版本，并把原因显示在对应插件行下方。DSH 的 `installBundle` 本身是“新增插件”语义，直接安装已存在的包会被拒绝，所以默认走 remove + install。
+
+在 DSH NEXT 中，正在运行的宿主插件可能被拒绝热卸载（`bundle-in-use`）或要求重启（`stop-profile`）。0.3.5 起遇到这两种情况会自动切换为覆盖安装：先把该依赖暂时从 profile 清单中隐藏，让插件管理器完成 pnpm 安装与重建，再恢复依赖并把插件重新选中。成功后提示重启，失败则回滚到原版本。
 
 **普通 Web 环境能用吗？**
 
@@ -147,7 +164,7 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 
 **怎么固定版本或回滚？**
 
-安装时用 `#v0.3.4` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。
+安装时用 `#v0.3.5` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH Desktop。
 
 **点了「忽略」之后怎么恢复？**
 
@@ -155,7 +172,7 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 
 ## 兼容性与限制
 
-- **插件更新**：使用 DSH 官方的 remove → install 路径；失败会恢复旧版本。
+- **插件更新**：优先使用 DSH 官方的 remove → install 路径；遇到 `bundle-in-use` / `stop-profile` 时自动覆盖安装并提示重启，失败会恢复旧版本、恢复 bundle 选中状态。
 - **需要重启**：替换已安装插件后，必须重启 DSH Desktop 才能加载新代码/新组件行。
 - **构建脚本**：某些插件需要批准 pnpm 构建脚本；失败时会显示待批准列表。
 - **普通 Web 运行**：没有桌面端路由，桌面端区域只显示状态。
@@ -172,7 +189,7 @@ dsh plugin --profile desktop add link:"F:/path/to/dsh-plugin-updater"
 ## 项目文档
 
 - [架构说明](docs/ARCHITECTURE.md)：Host/Client 分工、三层检查、更新与进度事件。
-- [开发历程](docs/BUILD-LOG.md)：从 0.1.0 到 0.3.4 的真实问题与修复记录。
+- [开发历程](docs/BUILD-LOG.md)：从 0.1.0 到 0.3.5 的真实问题与修复记录。
 - [贡献指南](CONTRIBUTING.md)：本地开发、检查与 PR 约定。
 - [路线图](https://github.com/users/TT10-24/projects/3)：正在做和接下来要做的事。
 
@@ -191,6 +208,8 @@ node .check/drag-check.mjs ./client.js
 ## English
 
 A zero-token update checker for DSH (DeepSeek Harness). It checks your installed plugins, DSH Desktop and the bundled core on launch, then reminds you with a draggable panel. You can update one plugin, update all of them in one click, and restart when DSH asks for it — no model calls, no token spend.
+
+Click the **⋯** button in the panel header to change its width, maximum height, accent color, surface and opacity; the choice is remembered locally. In DSH NEXT, a host bundle that refuses hot removal is replaced in place and reported as **restart required** instead of failing the whole batch.
 
 When the stable channel promotes **DSH NEXT**, the panel treats it as a product-line migration rather than a patch. **Keep data and update** writes the DSH NEXT data-directory pointer to your current DSH home before the shell's installer runs, so the new app opens with the same workspace, conversations and plugins. A repair action covers a NEXT install that was already pointed at its default `~/.dsh` home.
 

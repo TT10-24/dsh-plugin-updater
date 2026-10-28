@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.5
+
+- **Fixed every plugin update failing with `bundle-in-use`** on DSH NEXT. A running host bundle cannot be hot-unloaded; the old flow called `removeBundle` first, got `bundle-in-use`, and reported a failure for every plugin.
+- Failed removals no longer leave the plugin deselected: the Host restores the bundle entry through `setBundleEnabled`, or edits `dsh.profile.bundles` directly if the manager method is unavailable.
+- Added an **overwrite install** fallback for `bundle-in-use`: the dependency is hidden for the duration of `installBundle`, pnpm installs the target, then the dependency is restored and the panel asks for a restart. `stop-profile` installs over the running bundle directly.
+- The fallback rolls back while the dependency is hidden, so the exact previous version can be reinstalled; the original manifest text and bundle selection are restored if it fails.
+- Added **panel settings** behind the three-dot button in the header: width (320–560px), maximum height (380–820px), five accent presets plus a custom color, four dark surfaces, and opacity (72–100%). Settings persist in `dsh-plugin-updater:panel-appearance`; **恢复默认** and **复位位置** are one click away.
+- The accent now themes the logo, primary buttons, progress bar, live dots and focus ring through CSS custom properties instead of a hard-coded blue.
+- Added host coverage for the `bundle-in-use` fallback, its rollback, and the `stop-profile` path; the render check now asserts the three-dot settings trigger.
+
 ## 0.3.4
 
 - **Fixed the DSH NEXT startup failure**: `protocol.js` no longer statically imports `@deepseek-ai/cordis`; linked plugins in DSH NEXT fall back to a local `ctx.provide()` service base.

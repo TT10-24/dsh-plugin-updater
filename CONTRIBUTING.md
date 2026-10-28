@@ -35,10 +35,12 @@ DSH_DESKTOP_RESOURCES="<DSH Desktop>/resources" \
   node .check/selfcheck.mjs "<DSH_HOME>/profiles/desktop" "./client.js"
 ```
 
+新增的临时 profile 用例必须显式给 `UpdaterService` 传 `profileDir`，否则 `DSH_PROFILE_DIR` 会让测试读写真实 profile。
+
 ## 约定
 
 - 只用原生 ESM，不引入运行时依赖；客户端只 `require('react')`。
-- 颜色只用 `--dsw-alias-*` 主题 token，不写死颜色（图标除外）。
+- 面板颜色走 `PANEL_PALETTE` 的 CSS 变量与 fallback（`--upd-*`），新增颜色时同时提供默认值；侧边栏仍用 `--dsw-alias-*` 主题 token。
 - 你看到的界面文字要同时更新 `locale/zh.json` / `locale/en.json` 和 `client.js` 里的字典。
 - 更新/回滚逻辑只放在 Host 的 `update()`；客户端不重复实现。
 - 提交信息建议：`feat: ...`、`fix: ...`、`docs: ...`、`chore: ...`。

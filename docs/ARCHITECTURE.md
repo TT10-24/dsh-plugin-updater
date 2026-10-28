@@ -5,7 +5,7 @@
 | 文件 | 运行位置 | 职责 |
 | --- | --- | --- |
 | `index.js` | DSH Host（Node/Electron 主进程） | 读取 profile、请求 npm/桌面端版本服务、调用插件管理器执行更新 |
-| `client.js` | DSH Web 页面 | 侧边栏入口、可拖动面板、进度条、批量更新、重启按钮 |
+| `client.js` | DSH Web 页面 | 侧边栏入口、可拖动面板、面板外观设置、进度条、批量更新、重启按钮 |
 | `protocol.js` | Host | 可选地从 `@deepseek-ai/cordis` 取 `Service`；取不到时用本地 `ctx.provide()` 基类 |
 | `cordis.patch.yml` | Host | 把一个 `plugin-updater` 行插入 profile |
 | `locale/*.json` | 插件管理器 | 插件卡片的中英文标题与说明 |
@@ -50,7 +50,7 @@ this.typertRemote = Object.freeze({ service: this, serviceKey: 'pluginUpdater', 
 
 方法标记通过 `@deepseek-ai/dsh-typert-protocol/remote-methods` 原型描述符写入，因此不需要引入 typert 包，也不需要编译。
 
-## 更新一个插件为什么是 remove + install
+## 更新一个插件：remove + install，必要时覆盖安装
 
 DSH 插件管理器的 `installBundle` 在 HMR 环境下会拒绝“已经存在于 profile 依赖”的包（`already-installed`），它是给“新增插件”用的。官方插件页的更新路径是：
 
@@ -59,6 +59,28 @@ DSH 插件管理器的 `installBundle` 在 HMR 环境下会拒绝“已经存在
 3. 失败时用旧版本（先精确版本，再原始 spec）恢复。
 
 替换已安装插件的 JS 模块后，**新的组件行需要重启 DSH Desktop 才会进入运行树**；面板检测到 `restart-required` 会显示「立即重启 DSH」。
+
+### DSH NEXT 的 `bundle-in-use` / `stop-profile`
+
+DSH NEXT 会保留启动时已加载的宿主模块；`removeBundle` 在卸载前会先取消 bundle 选中并 reload，如果模块仍持有 fiber，就返回 `bundle-in-use`；没有 HMR 时则返回 `stop-profile`。旧版 0.3.4 把这两种情况都当成失败，而且取消选中已经生效，所以一次失败的更新会同时让插件在下次启动时消失。
+
+0.3.5 的处理：
+
+1. **先恢复选中**：`restoreBundleSelection` 用 `setBundleEnabled(name, true)` 把 bundle 放回 `dsh.profile.bundles`；管理器方法不可用时直接原子写 profile 清单。
+2. **`stop-profile`**：直接 `installBundle(target)` 覆盖安装，依赖保留，管理器报告 `restart-required`。
+3. **`bundle-in-use`**：先把该依赖从 profile 清单中暂时移除，让 `installBundle` 跳过 HMR 的 `already-installed` 守卫；pnpm 安装完成后再把依赖补回。成功返回 `{ ok: true, application: 'restart-required', fallback: 'overwrite-running' }`。
+4. **失败回滚**：在依赖仍隐藏时调用 `restoreInstall` 重装旧版本，然后恢复原始清单文本与 bundle 选中状态。若回滚也失败，至少保留原始清单，下一次启动不会丢插件。
+
+这条路径仍然只使用插件管理器自己的 `installBundle` / pnpm，不绕过兼容性检查、构建脚本审批或版本解析。
+
+## 面板外观
+
+面板的尺寸与配色完全在 Client 侧，Host 不参与：
+
+- 设置存在 `localStorage` 的 `dsh-plugin-updater:panel-appearance`：`width`、`height`（最大高度）、`accent` / `accent2`、`surface`、`opacity`。
+- `sanitizeAppearance` 把越界或损坏的值夹回范围，因此手动改 localStorage 也不会让面板消失。
+- 面板根节点写入 `--upd-bg`、`--upd-head`、`--upd-row`、`--upd-border`、`--upd-accent`、`--upd-glow` 等 CSS 变量；`PANEL_PALETTE` 全部走 `var(..., fallback)`，所以默认仍是深海军蓝 + 靛蓝，切换后 Logo、主按钮、进度条、状态点和焦点环一起变化。
+- 标题栏的三个点打开全宽设置页；点击遮罩、`Esc` 或「完成」关闭。`Esc` 先关设置页，再关面板。
 
 ## 进度
 
@@ -115,3 +137,4 @@ Host 把客户端生成的 `requestId` 传给 `installBundle`。管理器的 `ru
 - 普通 Web 运行没有桌面端路由，桌面端区域显示“未检测到桌面端”。
 - 某些插件需要批准 pnpm 构建脚本；失败时恢复旧版本并显示待批准列表。
 - 更新后必须重启才能加载新代码；这是 DSH 插件替换机制的限制。
+- 覆盖安装依赖插件管理器允许在 HMR 下重新安装同一包名；如果 DSH 后续版本收紧该守卫，Host 会返回失败并恢复旧版本，而不是假装成功。
