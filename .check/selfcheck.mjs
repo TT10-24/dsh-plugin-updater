@@ -3,14 +3,14 @@
  *
  * Must run from a directory that resolves `@deepseek-ai/*` (the dsh app tree).
  * It builds a real Cordis context, mounts the service, and performs one genuine
- * profile read plus registry/desktop sweep — including the "newly added plugin"
- * path and the desktop layer. It never writes into the profile.
+ * profile read, registry sweep and DSH NEXT data-folder migration — including
+ * the "newly added plugin" path. It never writes into the profile.
  */
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { UpdaterService, compareVersions, fetchLatestVersion, fetchDesktopVersion, releaseLine, releaseKind } from '../index.js'
+import { UpdaterService, compareVersions, fetchLatestVersion } from '../index.js'
 
 const failures = []
 const cases = [
@@ -32,37 +32,10 @@ for (const [left, right, expected] of cases) {
 }
 console.log(`version comparisons: ${cases.length - failures.length}/${cases.length} passed`)
 
-const lineCases = [
-  ['2.0.18', 'stable'],
-  ['2.0.20', 'stable'],
-  ['2.0.20-next', 'next'],
-  ['2.0.20-next.1', 'next'],
-  ['2.0.20-beta.1', 'beta'],
-  ['0.2.1-rc.2', 'prerelease'],
-]
-for (const [version, expected] of lineCases) {
-  const actual = releaseLine(version)
-  if (actual !== expected) failures.push(`releaseLine(${version}): expected ${expected}, got ${actual}`)
-}
-console.log(`release lines: ${lineCases.length} checked`)
-
-const kindCases = [
-  ['2.0.18', '2.0.20-next', 'product-line'],
-  ['2.0.18', '2.0.20', 'patch'],
-  ['2.0.18', '2.1.0', 'minor'],
-  ['2.0.18', '3.0.0', 'major'],
-  ['2.0.20-next', '2.0.20', 'prerelease'],
-]
-for (const [current, latest, expected] of kindCases) {
-  const actual = releaseKind(current, latest)
-  if (actual !== expected) failures.push(`releaseKind(${current}, ${latest}): expected ${expected}, got ${actual}`)
-}
-console.log(`release kinds: ${kindCases.length} checked`)
-
 const descriptor = Object.getOwnPropertyDescriptor(UpdaterService.prototype, '@deepseek-ai/dsh-typert-protocol/remote-methods')?.value
 console.log('remote descriptor:', JSON.stringify(descriptor))
 const methods = (descriptor?.methods ?? []).map((entry) => entry.method).sort().join(',')
-if (methods !== 'check,desktopData,ignore,prepareDesktopUpdate,repairDesktopData,status,unignore,update') failures.push(`unexpected Remote methods: ${methods}`)
+if (methods !== 'check,chooseDataFolder,ignore,migrateDataHome,status,unignore,update') failures.push(`unexpected Remote methods: ${methods}`)
 
 const profileDir = process.argv[2]
 if (typeof profileDir !== 'string' || profileDir.length === 0) {
@@ -103,8 +76,7 @@ ctx.provide('pluginManager', {
 ctx.provide('desktopRuntime', {
   updates: {
     isPackaged: true,
-    currentVersion: '2.0.18',
-    releaseChannel: 'stable',
+    currentVersion: '2.0.20-next',
   },
 })
 ctx.provide('logger', { info: (...args) => console.log('  log:', ...args) })
@@ -124,65 +96,82 @@ console.log('report:', JSON.stringify({ registry: report.registry, profileDir: r
 for (const entry of report.packages) {
   console.log(`  - ${entry.name} [${entry.source}] ${entry.installedVersion} -> ${entry.latestVersion} | ${entry.status}`)
 }
-console.log('desktop layer:', JSON.stringify(report.desktop))
+console.log('next layer:', JSON.stringify(report.next))
 console.log('engine layer:', JSON.stringify(report.engine))
 
 const simulated = report.packages.find((entry) => entry.name === 'dsh-simulated-new-plugin')
 if (simulated === undefined) failures.push('a bundle present only in the live bundle list was not checked')
 else console.log('new-plugin path:', JSON.stringify(simulated))
 
-if (report.desktop?.status === undefined) failures.push('desktop layer missing from the report')
-if (report.desktop?.currentVersion !== '2.0.18') failures.push(`desktop current version not read from the runtime: ${report.desktop?.currentVersion}`)
-if (report.desktop?.line !== 'stable') failures.push(`desktop release line not reported: ${report.desktop?.line}`)
-if (report.desktop?.data?.home !== home) failures.push(`desktop data home not resolved: ${report.desktop?.data?.home}`)
-if (report.desktop?.migration !== null && report.desktop?.requiresConfirmation !== true) failures.push('a NEXT migration was not marked as requiring confirmation')
+if (report.next?.status === undefined) failures.push('DSH NEXT layer missing from the report')
+if (report.next?.currentVersion !== '2.0.20-next') failures.push(`DSH NEXT current version not read from the runtime: ${report.next?.currentVersion}`)
+if (report.next?.product !== 'DSH NEXT') failures.push(`DSH NEXT product name is ${report.next?.product}`)
+if (report.next?.data?.home !== home) failures.push(`DSH NEXT data home not resolved: ${report.next?.data?.home}`)
 
-/** The handoff write must land in a temporary APPDATA, never the real one. */
+/** DSH NEXT data-folder migration, in an isolated source home. */
 const tempAppData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-next-'))
 const previousAppData = process.env.APPDATA
 process.env.APPDATA = tempAppData
+const sourceHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-source-'))
+const targetHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-target-'))
+fs.rmSync(targetHome, { recursive: true, force: true })
+fs.mkdirSync(path.join(sourceHome, 'profiles', 'desktop'), { recursive: true })
+fs.writeFileSync(path.join(sourceHome, 'profiles', 'desktop', 'package.json'), JSON.stringify({ name: 'dsh-profile-desktop', dependencies: {} }))
+fs.mkdirSync(path.join(sourceHome, 'sessions'), { recursive: true })
+fs.writeFileSync(path.join(sourceHome, 'sessions', 'one.jsonl'), '{"hello":"world"}\n')
+fs.mkdirSync(path.join(sourceHome, 'storages'), { recursive: true })
+fs.writeFileSync(path.join(sourceHome, 'storages', 'state.json'), '{"ok":true}\n')
 try {
   const handoffContext = new Context()
-  handoffContext.provide('profileContext', { name: path.basename(profileDir), dir: profileDir, home })
-  const handoff = new UpdaterService(handoffContext, { profileDir })
+  handoffContext.provide('profileContext', {
+    name: 'desktop',
+    dir: path.join(sourceHome, 'profiles', 'desktop'),
+    home: sourceHome,
+  })
+  const handoff = new UpdaterService(handoffContext, { profileDir: path.join(sourceHome, 'profiles', 'desktop') })
   handoff.dataDir = path.join(tempAppData, 'plugin-updater')
+  handoff.lastReportFile = path.join(handoff.dataDir, 'last-report.json')
   handoff.ignoredFile = path.join(handoff.dataDir, 'ignored.json')
   fs.mkdirSync(handoff.dataDir, { recursive: true })
-  const prepared = handoff.prepareDesktopUpdate(true, '2.0.20-next')
+
+  const copied = await handoff.migrateDataHome(targetHome, { copy: true })
   const pointerFile = path.join(tempAppData, 'DSH NEXT', 'home', 'desktop-next-location.json')
   const pointer = fs.existsSync(pointerFile) ? JSON.parse(fs.readFileSync(pointerFile, 'utf8')) : null
-  if (prepared.ok !== true) failures.push(`handoff write failed: ${prepared.error}`)
-  if (pointer?.home !== home) failures.push(`handoff pointer is ${pointer?.home}, expected ${home}`)
-  if (!fs.existsSync(path.join(handoff.dataDir, 'desktop-handoff.json'))) failures.push('handoff manifest was not written')
-  if (!fs.existsSync(path.join(handoff.dataDir, 'restore-desktop-data.ps1'))) failures.push('handoff recovery script was not written')
-  const repaired = handoff.repairDesktopData()
-  if (repaired.ok !== true) failures.push(`handoff repair failed: ${repaired.error}`)
-  const skipped = handoff.prepareDesktopUpdate(false, '2.0.20-next')
-  if (skipped.skipped !== 'preserve-home-not-requested') failures.push('opt-out did not skip the handoff')
-  const notProduct = handoff.prepareDesktopUpdate(true, '2.0.20')
-  if (notProduct.skipped !== 'not-a-product-line-change') failures.push('a stable patch was treated as a product change')
+  if (copied.ok !== true) failures.push(`data copy failed: ${copied.error}`)
+  if (pointer?.home !== targetHome) failures.push(`data pointer is ${pointer?.home}, expected ${targetHome}`)
+  if (!fs.existsSync(path.join(targetHome, 'sessions', 'one.jsonl'))) failures.push('sessions were not copied')
+  if (!fs.existsSync(path.join(targetHome, 'storages', 'state.json'))) failures.push('storages were not copied')
+  if (!fs.existsSync(path.join(targetHome, 'profiles', 'desktop', 'package.json'))) failures.push('profiles were not copied')
+  if (!fs.existsSync(path.join(handoff.dataDir, 'data-home.json'))) failures.push('data-home manifest was not written')
+  if (!fs.existsSync(path.join(handoff.dataDir, 'restore-data-home.ps1'))) failures.push('data-home recovery script was not written')
+
+  const pointerOnly = await handoff.migrateDataHome(sourceHome, { copy: false })
+  if (pointerOnly.ok !== true) failures.push(`pointer-only migration failed: ${pointerOnly.error}`)
+  const emptyTarget = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-empty-'))
+  const refused = await handoff.migrateDataHome(emptyTarget, { copy: false })
+  if (refused.ok !== false || refused.code !== 'empty-target') failures.push('pointer-only migration accepted an empty folder')
+  fs.rmSync(emptyTarget, { recursive: true, force: true })
+  const overlap = await handoff.migrateDataHome(path.join(sourceHome, 'profiles', 'nested'), { copy: false })
+  if (overlap.ok !== false || overlap.code !== 'overlap') failures.push('migration accepted a target inside the source home')
 
   const ignoredOne = handoff.ignore('dsh-ops', '9.9.9')
-  const ignoredDesktop = handoff.ignore('desktop', '2.0.20-next')
   const ignoredFile = path.join(handoff.dataDir, 'ignored.json')
   const ignoredState = fs.existsSync(ignoredFile) ? JSON.parse(fs.readFileSync(ignoredFile, 'utf8')) : null
-  if (ignoredOne.ok !== true || ignoredDesktop.ok !== true) failures.push('ignore() did not accept a package and a desktop version')
+  if (ignoredOne.ok !== true) failures.push('ignore() did not accept a package version')
   if (ignoredState?.packages?.['dsh-ops'] !== '9.9.9') failures.push('ignore() did not persist the package version')
-  if (ignoredState?.desktop !== '2.0.20-next') failures.push('ignore() did not persist the desktop version')
   const unignored = handoff.unignore('dsh-ops')
   if (unignored.ok !== true) failures.push('unignore() did not remove the package entry')
   if (handoff.readIgnored().packages['dsh-ops'] !== undefined) failures.push('unignore() left the package entry behind')
-  console.log('ignore list: temporary dataDir OK')
+  console.log('data home + ignore list: temporary homes OK')
 } finally {
   process.env.APPDATA = previousAppData
   fs.rmSync(tempAppData, { recursive: true, force: true })
+  fs.rmSync(sourceHome, { recursive: true, force: true })
+  fs.rmSync(targetHome, { recursive: true, force: true })
 }
+
 if (report.engine !== null && report.engine?.currentVersion === undefined) failures.push('engine layer has no current version')
 console.log('engine detected:', report.engine === null ? 'none (no bundled manifest)' : report.engine.currentVersion)
-
-const desktopAnswer = await fetchDesktopVersion(undefined, 'stable', '2.0.18', new AbortController().signal)
-console.log('desktop service answer:', JSON.stringify(desktopAnswer))
-if (desktopAnswer.status === 'ok' && desktopAnswer.version === null) failures.push('desktop service answer carried no version')
 
 const status = service.status()
 console.log('status:', JSON.stringify(status))
@@ -331,8 +320,7 @@ if (!client.includes('useDrag')) failures.push('client has no drag support')
 if (!client.includes('ref: panelRef')) failures.push('the drag ref is not attached to the panel node')
 if (!client.includes('document.addEventListener')) failures.push('drag listeners are not attached synchronously')
 if (!client.includes('localStorage')) failures.push('client does not remember the dragged position')
-if (!client.includes('/api/desktop/updates/check')) failures.push('client does not use the shell desktop update route')
-if (!client.includes('/api/desktop/restart')) failures.push('client cannot restart the desktop after an update')
+if (client.includes('/api/desktop/')) failures.push('client still depends on a legacy desktop route')
 if (!client.includes('restartRequired')) failures.push('client does not surface the restart requirement')
 if (!client.includes('progressFraction')) failures.push('client has no progress model')
 if (!client.includes("role: 'progressbar'")) failures.push('client has no progress bar')
@@ -340,7 +328,14 @@ if (!client.includes('updateAllCount')) failures.push('client has no one-click b
 if (!client.includes("plugin-manager/install-state")) failures.push('client does not subscribe to install progress')
 if (!client.includes("plugin-manager/install-log")) failures.push('client does not subscribe to install logs')
 if (!client.includes('markUpdated')) failures.push('client does not hide updated rows immediately')
-if (!client.includes("credentials: 'same-origin'")) failures.push('client desktop update request does not carry the browser session')
+if (!client.includes('chooseDataFolder')) failures.push('client has no native data-folder picker')
+if (!client.includes('migrateDataHome')) failures.push('client cannot migrate the DSH NEXT data folder')
+if (!client.includes('nextTitle')) failures.push('client has no DSH NEXT section')
+if (!client.includes('nextMigrate')) failures.push('client has no DSH NEXT data migration action')
+if (!client.includes('nextCopy')) failures.push('client cannot copy data during migration')
+if (!client.includes('DSH NEXT')) failures.push('client does not name the DSH NEXT product')
+if (client.includes('不消耗 token') || client.includes('noTokens')) failures.push('client still renders the token footer')
+if (client.includes("subtitle:")) failures.push('client still renders the panel subtitle')
 if (!/inject: \['slots', 'locale'\]/.test(client)) failures.push('client dependencies changed unexpectedly')
 if (!updateSource.includes('bundle-in-use')) failures.push('update does not handle bundle-in-use')
 if (!updateSource.includes('installOverRunning')) failures.push('update has no overwrite fallback')

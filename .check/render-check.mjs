@@ -59,28 +59,21 @@ const report = {
     { name: 'dsh-plugin-updater', installedVersion: 'link:./local-plugin', latestVersion: null, hasUpdate: false, status: 'bypassed', reason: null, repository: null, source: 'dependency' },
   ],
   updates: ['dsh-ops', 'dsh-context'],
-  desktop: {
-    status: 'update',
-    currentVersion: '2.0.18',
-    latestVersion: '2.0.20-next',
-    channel: 'stable',
-    line: 'stable',
-    latestLine: 'next',
+  next: {
+    status: 'current',
+    product: 'DSH NEXT',
+    currentVersion: '2.0.20-next',
+    source: 'runtime.json',
     reason: null,
-    endpoint: 'https://example.invalid',
-    source: 'desktopRuntime',
-    canUpdate: true,
-    kind: 'product-line',
-    requiresConfirmation: true,
-    migration: {
+    data: {
       product: 'DSH NEXT',
-      targetVersion: '2.0.20-next',
       home: 'F:\\DSH-Home',
-      canPreserveHome: true,
+      pointer: 'F:\\DSH-Home',
+      pointerMatchesHome: true,
       needsRepair: false,
-      locationFile: 'C:\\Users\\Example\\AppData\\Roaming\\DSH NEXT\\home\\desktop-next-location.json',
+      canSetHome: true,
+      detected: true,
     },
-    data: { home: 'F:\\DSH-Home', needsRepair: false, detected: true, pointerMatchesHome: true },
   },
   engine: { status: 'current', currentVersion: '0.2.1-rc.2', latestVersion: '0.2.0-rc.2', reason: null, bundled: true },
   compat: { profileContext: true, pluginManager: true, desktopRuntime: true, dshHomePath: true, degraded: false },
@@ -89,14 +82,6 @@ const report = {
 
 globalThis.fetch = async (url, init) => {
   calls.push({ url: String(url), init })
-  if (String(url).includes('prepareDesktopUpdate')) {
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({ result: { ok: true, value: { ok: true, home: 'F:\\DSH-Home' } } }),
-      text: async () => JSON.stringify({ ok: true }),
-    }
-  }
   return {
     ok: true,
     status: 200,
@@ -166,6 +151,12 @@ const ALLOWED_DOM_PROPS = new Set([
   'step',
   'value',
   'onChange',
+  'id',
+  'htmlFor',
+  'placeholder',
+  'checked',
+  'autoComplete',
+  'spellCheck',
   'sec-fetch-site',
   'viewBox',
   'width',
@@ -266,42 +257,11 @@ if (appearanceButton === undefined) {
   if (appearanceButton.props['aria-expanded'] !== false) failures.push('panel-settings button starts expanded')
 }
 
-/** A product-line change must preflight the data directory before the shell route. */
-const migrationButton = buttons.find((button) => flattenText(button.children).includes('migrationUpdate'))
-if (migrationButton === undefined) {
-  failures.push('no product-line migration button rendered')
-} else {
-  const before = calls.length
-  await migrationButton.props.onClick()
-  const added = calls.slice(before)
-  const prepare = added.find((entry) => entry.url === 'api/pluginUpdater/prepareDesktopUpdate')
-  const shell = added.find((entry) => entry.url === '/api/desktop/updates/check')
-  if (prepare === undefined) failures.push('migration button did not call prepareDesktopUpdate')
-  else {
-    const body = String(prepare.init?.body)
-    if (!body.includes('"preserveHome":true')) failures.push('migration preflight does not request home preservation')
-    if (!body.includes('"targetVersion":"2.0.20-next"')) failures.push('migration preflight does not name the target version')
-  }
-  if (shell === undefined) failures.push('migration button did not continue to /api/desktop/updates/check')
-  else {
-    if (added.indexOf(prepare) > added.indexOf(shell)) failures.push('the shell update started before the data-directory preflight')
-    if (shell.init?.method !== 'POST') failures.push('desktop update request is not a POST')
-    if (shell.init?.credentials !== 'same-origin') failures.push('desktop update request does not carry the browser session')
-    if (shell.init?.body !== '{}') failures.push('desktop update request body is not an empty object')
-  }
-}
-
-/** The escape hatch still hands the update straight to the shell. */
-const skipButton = buttons.find((button) => flattenText(button.children).includes('migrationSkip'))
-if (skipButton === undefined) {
-  failures.push('no direct-update escape hatch rendered')
-} else {
-  const before = calls.length
-  await skipButton.props.onClick()
-  if (!calls.slice(before).some((entry) => entry.url === '/api/desktop/updates/check')) {
-    failures.push('direct update did not call /api/desktop/updates/check')
-  }
-}
+/** The DSH NEXT card must show the running version and offer the data migration sheet. */
+const migrateButton = buttons.find((button) => flattenText(button.children).trim() === 'nextMigrate')
+if (migrateButton === undefined) failures.push('no DSH NEXT data migration button rendered')
+if (!text.has('2.0.20-next')) failures.push('DSH NEXT current version is missing')
+if (![...text].some((value) => value.includes('F:\\DSH-Home'))) failures.push('DSH NEXT data directory is missing')
 
 /** The plugin button must call the Remote update endpoint with the exact target. */
 const pluginButton = buttons.find((button) => flattenText(button.children).trim() === 'update')
@@ -331,18 +291,6 @@ if (ignoreButton === undefined) {
   }
 }
 
-/** The desktop ignore action must pin the desktop version, not a package. */
-const desktopIgnoreButton = buttons.find((button) => flattenText(button.children).trim() === 'desktopIgnore')
-if (desktopIgnoreButton === undefined) {
-  failures.push('no desktop ignore button rendered')
-} else {
-  const before = calls.length
-  await desktopIgnoreButton.props.onClick()
-  const call = calls.slice(before).find((entry) => entry.url === 'api/pluginUpdater/ignore')
-  if (call === undefined) failures.push('desktop ignore did not call pluginUpdater/ignore')
-  else if (!String(call.init?.body).includes('"target":"desktop"')) failures.push('desktop ignore did not target the desktop update')
-}
-
 /** One click updates every listed plugin; the batch button names both. */
 const batchButton = buttons.find((button) => flattenText(button.children).startsWith('updateAllCount'))
 if (batchButton === undefined) {
@@ -366,7 +314,7 @@ if (batchButton === undefined) {
   if (requestIds.some((id) => typeof id !== 'string' || id.length === 0)) failures.push('batch update is missing a request id')
 }
 
-for (const expected of ['pluginsTitle', 'desktopTitle', 'engineTitle', 'update', 'migrationTitle', 'migrationUpdate', 'ignoredTitle', 'unignore', 'checkNow']) {
+for (const expected of ['pluginsTitle', 'nextTitle', 'engineTitle', 'update', 'nextMigrate', 'ignoredTitle', 'unignore', 'checkNow']) {
   if (!text.has(expected)) failures.push(`rendered output is missing ${expected}`)
 }
 if (!text.has('dsh-ops')) failures.push('rendered output is missing the plugin row')

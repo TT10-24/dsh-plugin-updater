@@ -6,53 +6,47 @@
  *
  *   1. Plugin packages — read from the profile manifest and the live bundle
  *      directory, compared with the npm registry over plain HTTPS.
- *   2. DSH Desktop — compared with the public desktop release service
- *      (`https://www.dshdesktop.cn/api/desktop/version`). Update is handed to
- *      the desktop's own official flow, never reimplemented here.
- *   3. DSH core ("内核") — the version bundled inside Desktop, compared with the
- *      published `@deepseek-ai/dsh`. Informational: it ships with Desktop.
+ *   2. DSH NEXT — the running version from its runtime manifest and the data
+ *      folder it currently uses. DSH NEXT updates itself; this plugin only
+ *      reports the version and can migrate the data folder.
+ *   3. DSH core ("内核") — the version bundled inside DSH NEXT.
  *
- * Compatibility posture ("自动兼容新的内核"):
+ * The migration writes DSH NEXT's own location files after copying the user's
+ * profiles, sessions and storages to a folder they choose. It never deletes the
+ * source and never writes the pointer before the copy succeeds.
+ *
+ * Compatibility posture:
  *   * No service is a hard dependency. `pluginManager`, `profileContext` and
- *     `desktopRuntime` are all probed through `ctx.get()`, so a renamed or
- *     removed service degrades one capability instead of blocking the plugin.
+ *     `desktopRuntime` are probed through `ctx.get()`, so a renamed or removed
+ *     service degrades one capability instead of blocking the plugin.
  *   * Versions are resolved through several fallbacks (runtime service, packaged
- *     manifests, environment), because where a kernel keeps its version is an
- *     implementation detail that has moved before.
- *   * External responses are parsed tolerantly (`version`, `latestVersion`, or a
- *     bare version body) so a service field rename does not break the check.
- *   * Every capability actually observed is reported as `compat`, and a degraded
- *     check still returns the layers it could read.
- *
- * The result is served to the Web UI through the Remote endpoints
- * `pluginUpdater/check` and `pluginUpdater/update`. Starting a Desktop update is
- * a browser-side action: the panel POSTs the shell's own
- * `/api/desktop/updates/check` route, exactly as the Desktop settings page does,
- * so the shell keeps ownership of signatures, channels and installer handoff.
+ *     manifests, environment).
+ *   * Every capability actually observed is reported as `compat`.
  */
 
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import { promisify } from 'node:util'
 
 import { Service } from './protocol.js'
 
 /** Host Service key; also the Remote namespace the browser calls. */
 const SERVICE_KEY = 'pluginUpdater'
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org'
-const DEFAULT_DESKTOP_ENDPOINT = 'https://www.dshdesktop.cn/api/desktop/version'
-const DESKTOP_CHANNEL_HEADER = 'x-dsh-desktop-channel'
-const DESKTOP_VERSION_HEADER = 'x-dsh-desktop-version'
-const DESKTOP_PACKAGE_NAME = 'dsh-plugin-desktop'
 const DESKTOP_NEXT_PACKAGE_NAME = 'dsh-desktop-next'
 const ENGINE_PACKAGE_NAME = '@deepseek-ai/dsh'
-/** The separate DSH NEXT product that a stable install can be promoted to. */
+/** The only desktop product this release supports. */
 const DESKTOP_NEXT_PRODUCT = 'DSH NEXT'
 const DESKTOP_NEXT_USER_DATA = 'DSH NEXT'
 const DESKTOP_NEXT_LOCATION_FILE = 'desktop-next-location.json'
 const DESKTOP_NEXT_LAST_HOME_FILE = 'desktop-next-last-home.json'
-const DESKTOP_NEXT_DOWNLOAD_PAGE = 'https://www.dshdesktop.cn/download'
+/** Data moved by a folder migration; caches and logs stay behind. */
+const DATA_HOME_ENTRIES = ['profiles', 'sessions', 'storages', '.credentials.yaml', '.anonymous-user-id', 'desktop-locale.json', 'desktop-preferences.json']
+const DATA_HOME_MARKERS = ['profiles', 'sessions', 'storages']
+const execFileAsync = promisify(execFile)
 
 /** Remote methods are declared through the typert protocol's marker descriptor. */
 const REMOTE_METHOD_DESCRIPTOR = '@deepseek-ai/dsh-typert-protocol/remote-methods'
@@ -61,7 +55,7 @@ const REMOTE_SEGMENT = /^[A-Za-z0-9_$.-]+$/
 const REQUEST_TIMEOUT_MS = 12_000
 const REPORT_TTL_MS = 5 * 60_000
 
-/** A canonical SemVer the desktop version service accepts. */
+/** A canonical SemVer the DSH NEXT runtime manifest may carry. */
 const CANONICAL_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 
 /**
@@ -115,53 +109,24 @@ export function compareVersions(left, right) {
   return a.core === b.core ? (a.prerelease === b.prerelease ? 0 : a.prerelease < b.prerelease ? -1 : 1) : a.core < b.core ? -1 : 1
 }
 
-/**
- * The release stream a version belongs to. Stable versions have no
- * prerelease; a `-next` prerelease means the DSH NEXT product line, whose
- * installer and default data directory are separate from the stable desktop.
- * Exported for the offline self-check, not part of the plugin API.
- */
-export function releaseLine(version) {
-  const text = String(version ?? '').trim().replace(/^v/i, '').split('+')[0]
-  const dash = text.indexOf('-')
-  if (dash < 0) return 'stable'
-  const prerelease = text.slice(dash + 1).toLowerCase()
-  if (prerelease === 'next' || prerelease.startsWith('next.')) return 'next'
-  if (prerelease === 'beta' || prerelease.startsWith('beta.')) return 'beta'
-  return 'prerelease'
-}
-
-/**
- * The kind of change between two desktop versions: a same-product patch,
- * minor, major or prerelease, or the separate DSH NEXT product line.
- * Exported for the offline self-check, not part of the plugin API.
- */
-export function releaseKind(currentVersion, latestVersion) {
-  if (typeof latestVersion !== 'string' || latestVersion.length === 0) return null
-  if (releaseLine(latestVersion) === 'next' && releaseLine(currentVersion) !== 'next') return 'product-line'
-  const numeric = (value) =>
-    String(value ?? '')
-      .trim()
-      .replace(/^v/i, '')
-      .split('+')[0]
-      .split('-')[0]
-      .split('.')
-      .map((part) => (/^\d+$/.test(part) ? Number(part) : null))
-  const left = numeric(currentVersion)
-  const right = numeric(latestVersion)
-  if (left.length < 2 || right.length < 2 || left.some((part) => part === null) || right.some((part) => part === null)) return 'version'
-  if (right[0] !== left[0]) return 'major'
-  if (right[1] !== left[1]) return 'minor'
-  if ((right[2] ?? 0) !== (left[2] ?? 0)) return 'patch'
-  return 'prerelease'
-}
-
 /** Compare two absolute paths the way this host's file system does. */
 function sameDirectory(left, right) {
   try {
     const a = path.resolve(left)
     const b = path.resolve(right)
     return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+  } catch {
+    return false
+  }
+}
+
+/** Whether `child` is strictly inside `parent`, case-insensitively on Windows. */
+function isInside(parent, child) {
+  try {
+    const from = process.platform === 'win32' ? path.resolve(parent).toLowerCase() : path.resolve(parent)
+    const to = process.platform === 'win32' ? path.resolve(child).toLowerCase() : path.resolve(child)
+    const relative = path.relative(from, to)
+    return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative)
   } catch {
     return false
   }
@@ -227,7 +192,6 @@ function desktopNextPaths() {
     home,
     locationFile: path.join(home, DESKTOP_NEXT_LOCATION_FILE),
     lastHomeFile: path.join(home, DESKTOP_NEXT_LAST_HOME_FILE),
-    downloadPage: DESKTOP_NEXT_DOWNLOAD_PAGE,
   }
 }
 
@@ -253,9 +217,8 @@ function desktopNextInstalled() {
 /**
  * The data-directory handoff plan for the separate DSH NEXT product.
  *
- * DSH NEXT defaults to `~/.dsh` and only follows its own location file, so a
- * stable install that is promoted to NEXT would otherwise open with an empty
- * home. This plan is read-only; `preserveDesktopHome` applies it.
+ * DSH NEXT defaults to `~/.dsh` and only follows its own location file. This
+ * plan is read-only; `applyDataHome` writes the chosen directory.
  */
 export function desktopNextPlan(ctx, profileDir, fallbackHome = null) {
   const paths = desktopNextPaths()
@@ -275,10 +238,9 @@ export function desktopNextPlan(ctx, profileDir, fallbackHome = null) {
       pointerIsDefault: false,
       defaultHome: path.join(os.homedir(), '.dsh'),
       needsRepair: false,
-      canPreserveHome: false,
+      canSetHome: false,
       locationFile: null,
       lastHomeFile: null,
-      downloadPage: DESKTOP_NEXT_DOWNLOAD_PAGE,
       environmentVariable: 'DSH_DESKTOP_NEXT_HOME',
     }
   }
@@ -304,10 +266,9 @@ export function desktopNextPlan(ctx, profileDir, fallbackHome = null) {
     pointerIsDefault,
     defaultHome,
     needsRepair: detected && home !== null && !pointerMatchesHome && (pointer === null || pointerIsDefault),
-    canPreserveHome: home !== null,
+    canSetHome: home !== null,
     locationFile: paths.locationFile,
     lastHomeFile: paths.lastHomeFile,
-    downloadPage: DESKTOP_NEXT_DOWNLOAD_PAGE,
     environmentVariable: 'DSH_DESKTOP_NEXT_HOME',
   }
 }
@@ -353,44 +314,6 @@ export async function fetchLatestVersion(registry, name, signal) {
   } catch (error) {
     if (signal?.aborted) return outcome('error', null, 'cancelled')
     return outcome('error', null, `registry request failed: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-/**
- * Ask the public desktop release service for the newest version in a channel.
- * The response shape is read leniently: a renamed field must not break the check.
- */
-export async function fetchDesktopVersion(endpoint, channel, currentVersion, signal) {
-  const url = typeof endpoint === 'string' && endpoint.length > 0 ? endpoint : DEFAULT_DESKTOP_ENDPOINT
-  const headers = { accept: 'application/json', 'cache-control': 'no-cache' }
-  if (typeof channel === 'string' && channel.length > 0) headers[DESKTOP_CHANNEL_HEADER] = channel
-  if (typeof currentVersion === 'string' && CANONICAL_VERSION.test(currentVersion)) headers[DESKTOP_VERSION_HEADER] = currentVersion
-  try {
-    const response = await fetch(url, { method: 'GET', headers, redirect: 'follow', signal })
-    if (!response.ok) return { ...outcome('error', null, `desktop version service answered HTTP ${response.status}`), channel: null }
-    const text = await response.text()
-    let parsed = null
-    try {
-      parsed = JSON.parse(text)
-    } catch {
-      parsed = null
-    }
-    const trimmed = typeof text === 'string' ? text.trim() : ''
-    const version =
-      typeof parsed?.version === 'string'
-        ? parsed.version
-        : typeof parsed?.latestVersion === 'string'
-          ? parsed.latestVersion
-          : CANONICAL_VERSION.test(trimmed)
-            ? trimmed
-            : null
-    if (version === null) return { ...outcome('error', null, 'desktop version service returned no version'), channel: null }
-    return { ...outcome('ok', version, null), channel: typeof parsed?.channel === 'string' ? parsed.channel : null }
-  } catch (error) {
-    return {
-      ...outcome('error', null, signal?.aborted ? 'cancelled' : `desktop version request failed: ${error instanceof Error ? error.message : String(error)}`),
-      channel: null,
-    }
   }
 }
 
@@ -554,32 +477,27 @@ function engineManifestCandidates(ctx) {
   return [...new Set(candidates)]
 }
 
-/** Resolve the installed DSH Desktop version and release channel. */
-function resolveDesktopInstallation(ctx) {
+/** Resolve the running DSH NEXT version. DSH NEXT exposes its build in runtime.json. */
+function resolveNextInstallation(ctx) {
   const runtime = safeGet(ctx, 'desktopRuntime')
   const updates = runtime?.updates
-  const channel = typeof updates?.releaseChannel === 'string' && updates.releaseChannel.length > 0 ? updates.releaseChannel : 'stable'
   if (typeof updates?.currentVersion === 'string' && updates.currentVersion.length > 0) {
-    return { version: updates.currentVersion, channel, source: 'desktopRuntime', packaged: updates?.isPackaged === true }
+    return { version: updates.currentVersion, source: 'desktopRuntime' }
   }
   for (const file of desktopRuntimeVersionCandidates()) {
     const parsed = readJsonFile(file)
     if (typeof parsed?.desktopVersion === 'string' && CANONICAL_VERSION.test(parsed.desktopVersion)) {
-      return { version: parsed.desktopVersion, channel, source: file, packaged: true }
+      return { version: parsed.desktopVersion, source: file }
     }
   }
   const environmentVersion = process.env.DSH_DESKTOP_PRODUCT_VERSION
   if (typeof environmentVersion === 'string' && CANONICAL_VERSION.test(environmentVersion)) {
-    return { version: environmentVersion, channel, source: 'environment', packaged: true }
+    return { version: environmentVersion, source: 'environment' }
   }
   for (const file of desktopManifestCandidates()) {
     const parsed = readJsonFile(file)
-    if (
-      (parsed?.name === DESKTOP_PACKAGE_NAME || parsed?.name === DESKTOP_NEXT_PACKAGE_NAME) &&
-      typeof parsed.version === 'string' &&
-      parsed.version.length > 0
-    ) {
-      return { version: parsed.version, channel, source: file, packaged: true }
+    if (parsed?.name === DESKTOP_NEXT_PACKAGE_NAME && typeof parsed.version === 'string' && parsed.version.length > 0) {
+      return { version: parsed.version, source: file }
     }
   }
   return null
@@ -599,9 +517,8 @@ function resolveEngineInstallation(ctx) {
 /**
  * The plugin updater service.
  *
- * `check` and `update` are Remote: they are what the browser panel calls. The
- * Desktop update is triggered by the panel through the shell's own route, so the
- * Host half only ever reads versions. None of this touches the agent loop.
+ * `check`, `update`, `chooseDataFolder` and `migrateDataHome` are Remote:
+ * they are what the browser panel calls. None of this touches the agent loop.
  */
 export class UpdaterService extends Service {
   /**
@@ -618,11 +535,8 @@ export class UpdaterService extends Service {
      */
     this.typertRemote = Object.freeze({ service: this, serviceKey: SERVICE_KEY, namespace: SERVICE_KEY })
     this.registry = typeof config.registry === 'string' && config.registry.length > 0 ? config.registry : DEFAULT_REGISTRY
-    this.desktopEndpoint =
-      typeof config.desktopEndpoint === 'string' && config.desktopEndpoint.length > 0 ? config.desktopEndpoint : DEFAULT_DESKTOP_ENDPOINT
     this.autoCheck = config.autoCheck !== false
     this.checkOnBoot = config.checkOnBoot !== false
-    this.checkDesktop = config.checkDesktop !== false
     this.checkEngine = config.checkEngine !== false
     this.logLines = config.verbose === true
     this.report = null
@@ -677,15 +591,8 @@ export class UpdaterService extends Service {
     ].join('\r\n')
   }
 
-  /**
-   * Point DSH NEXT at this profile's data home, backing up whatever choice it
-   * had. Writing the pointer before the installer runs is what keeps the
-   * workspace, conversations and plugins visible after a product-line change.
-   */
-  preserveDesktopHome(reason) {
-    const plan = this.desktopData()
-    if (!plan.available) return { ok: false, error: 'DSH NEXT data-directory support is unavailable on this platform' }
-    if (plan.home === null) return { ok: false, error: 'could not resolve the current DSH data directory' }
+  /** Back up the two DSH NEXT pointer files before a change. */
+  backupDataPointers(plan) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
     const backedUp = []
     for (const file of [plan.locationFile, plan.lastHomeFile]) {
@@ -700,9 +607,14 @@ export class UpdaterService extends Service {
         return { ok: false, error: `could not back up ${file}: ${error instanceof Error ? error.message : String(error)}` }
       }
     }
+    return { ok: true, backedUp }
+  }
+
+  /** Write both DSH NEXT pointer files and the local handoff record. */
+  writeDataPointers(plan, destination, reason, details) {
     try {
-      writeJsonFile(plan.locationFile, { home: plan.home })
-      writeJsonFile(plan.lastHomeFile, { home: plan.home })
+      writeJsonFile(plan.locationFile, { home: destination })
+      writeJsonFile(plan.lastHomeFile, { home: destination })
     } catch (error) {
       return { ok: false, error: `could not write the DSH NEXT data directory: ${error instanceof Error ? error.message : String(error)}` }
     }
@@ -711,39 +623,146 @@ export class UpdaterService extends Service {
       createdAt: new Date().toISOString(),
       reason,
       product: plan.product,
-      home: plan.home,
+      home: destination,
       locationFile: plan.locationFile,
       lastHomeFile: plan.lastHomeFile,
-      downloadPage: plan.downloadPage,
+      ...details,
     }
     if (this.dataDir !== null) {
       try {
-        writeJsonFile(path.join(this.dataDir, 'desktop-handoff.json'), handoff)
-        fs.writeFileSync(path.join(this.dataDir, 'restore-desktop-data.ps1'), this.restoreScript(plan.home), 'utf8')
+        writeJsonFile(path.join(this.dataDir, 'data-home.json'), handoff)
+        fs.writeFileSync(path.join(this.dataDir, 'restore-data-home.ps1'), this.restoreScript(destination), 'utf8')
       } catch (error) {
-        this.log(`could not write the handoff record: ${error instanceof Error ? error.message : String(error)}`)
+        this.log(`could not write the data-home record: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    this.trace('desktop:preserve-home', { reason, home: plan.home, backedUp })
-    return { ok: true, ...handoff, backedUp }
+    this.trace('data-home:apply', { reason, home: destination, ...details })
+    return { ok: true, ...handoff }
   }
 
   /**
-   * Remote: preflight a Desktop update that changes product line.
+   * Remote: let the user choose a data folder with the native picker.
    *
-   * Only a `-next` target is treated as a product change. It writes the
-   * successor's data-directory pointer before the shell downloads or installs
-   * anything, then the client continues with the shell's official flow.
+   * The Host process is a plain Node child, so a browser directory picker
+   * cannot return an absolute path. Windows PowerShell's FolderBrowserDialog
+   * can; other platforms fall back to the dialog's text field.
    */
-  prepareDesktopUpdate(preserveHome, targetVersion) {
-    if (preserveHome !== true) return { ok: true, skipped: 'preserve-home-not-requested' }
-    if (releaseLine(targetVersion) !== 'next') return { ok: true, skipped: 'not-a-product-line-change' }
-    return this.preserveDesktopHome('desktop-update')
+  async chooseDataFolder() {
+    if (process.platform !== 'win32') {
+      return { ok: false, error: 'the native folder picker is only available on Windows', unsupported: true }
+    }
+    const script = [
+      'Add-Type -AssemblyName System.Windows.Forms',
+      "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+      "$dialog.Description = 'Select the DSH NEXT data folder'",
+      '$dialog.ShowNewFolderButton = $true',
+      '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+      "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.SelectedPath) }",
+    ].join('\n')
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    try {
+      const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-STA', '-EncodedCommand', encoded], {
+        windowsHide: true,
+        timeout: 300_000,
+      })
+      const selected = String(stdout ?? '').replace(/^\uFEFF/, '').trim()
+      return { ok: true, path: selected.length > 0 ? path.resolve(selected) : null }
+    } catch (error) {
+      return { ok: false, error: `could not open the folder picker: ${error instanceof Error ? error.message : String(error)}` }
+    }
   }
 
-  /** Remote: repair a DSH NEXT pointer that does not point at this data home. */
-  repairDesktopData() {
-    return this.preserveDesktopHome('manual-repair')
+  /**
+   * Remote: point DSH NEXT at a user-chosen data folder, optionally copying
+   * the user's data there first. The copy is conservative: it never deletes the
+   * source, writes the pointer only after the copy completes, and removes the
+   * new folder if the copy fails.
+   */
+  async migrateDataHome(target, options = {}) {
+    const plan = this.desktopData()
+    if (!plan.available) return { ok: false, code: 'unsupported', error: 'DSH NEXT data-directory support is unavailable on this platform' }
+    if (plan.home === null || typeof plan.locationFile !== 'string' || typeof plan.lastHomeFile !== 'string') {
+      return { ok: false, code: 'no-home', error: 'could not resolve the current DSH data directory' }
+    }
+    const raw = typeof target === 'string' ? target.trim() : ''
+    if (raw.length === 0 || !path.isAbsolute(raw)) return { ok: false, code: 'invalid-target', error: 'choose an absolute folder path' }
+    const destination = path.resolve(raw)
+    if (path.parse(destination).root === destination) return { ok: false, code: 'invalid-target', error: 'choose a folder, not a drive root' }
+    const copy = options.copy === true
+    if (sameDirectory(plan.home, destination)) {
+      if (copy) return { ok: false, code: 'same-folder', error: 'the target folder is the current data directory' }
+      const backup = this.backupDataPointers(plan)
+      if (!backup.ok) return backup
+      const written = this.writeDataPointers(plan, destination, 'manual', { mode: 'pointer' })
+      return written.ok ? { ...written, previous: plan.home, mode: 'pointer', copied: [], skipped: [], backedUp: backup.backedUp, restartRequired: true } : written
+    }
+    if (isInside(plan.home, destination) || isInside(destination, plan.home)) {
+      return { ok: false, code: 'overlap', error: 'the target folder must not contain the current data directory or sit inside it' }
+    }
+    if (copy) {
+      if (fs.existsSync(destination)) return { ok: false, code: 'target-exists', error: 'the copy target must not exist yet' }
+      try {
+        fs.mkdirSync(destination, { recursive: true })
+      } catch (error) {
+        return { ok: false, code: 'create-failed', error: `could not create the target folder: ${error instanceof Error ? error.message : String(error)}` }
+      }
+      const copied = []
+      const skipped = []
+      try {
+        for (const entry of DATA_HOME_ENTRIES) {
+          const from = path.join(plan.home, entry)
+          let stat
+          try {
+            stat = fs.statSync(from)
+          } catch {
+            skipped.push(entry)
+            continue
+          }
+          await fs.promises.cp(from, path.join(destination, entry), {
+            recursive: stat.isDirectory(),
+            force: false,
+            errorOnExist: false,
+            dereference: true,
+          })
+          copied.push(entry)
+        }
+      } catch (error) {
+        try {
+          fs.rmSync(destination, { recursive: true, force: true })
+        } catch {
+          /* leave the partial folder for the user to inspect */
+        }
+        this.trace('data-home:copy-failed', { target: destination, message: error instanceof Error ? error.message : String(error) })
+        return { ok: false, code: 'copy-failed', error: `could not copy the data folder: ${error instanceof Error ? error.message : String(error)}` }
+      }
+      const backup = this.backupDataPointers(plan)
+      if (!backup.ok) return backup
+      const written = this.writeDataPointers(plan, destination, 'manual-copy', { mode: 'copy', copied, skipped })
+      return written.ok
+        ? { ...written, previous: plan.home, mode: 'copy', copied, skipped, backedUp: backup.backedUp, restartRequired: true }
+        : written
+    }
+    let stat = null
+    try {
+      stat = fs.statSync(destination)
+    } catch {
+      return { ok: false, code: 'target-missing', error: 'the target folder does not exist; check "copy" to create and fill it' }
+    }
+    if (!stat.isDirectory()) return { ok: false, code: 'not-a-folder', error: 'the target path is not a folder' }
+    const hasData = DATA_HOME_MARKERS.some((entry) => {
+      try {
+        return fs.existsSync(path.join(destination, entry))
+      } catch {
+        return false
+      }
+    })
+    if (!hasData) return { ok: false, code: 'empty-target', error: 'the target folder has no DSH data; check "copy" to migrate into it' }
+    const backup = this.backupDataPointers(plan)
+    if (!backup.ok) return backup
+    const written = this.writeDataPointers(plan, destination, 'manual', { mode: 'pointer' })
+    return written.ok
+      ? { ...written, previous: plan.home, mode: 'pointer', copied: [], skipped: [], backedUp: backup.backedUp, restartRequired: true }
+      : written
   }
 
   /** Registry the plugin manager itself would ask, so the check follows the profile. */
@@ -776,7 +795,7 @@ export class UpdaterService extends Service {
 
   /** Read the per-profile ignore list; a malformed file is treated as empty. */
   readIgnored() {
-    const empty = { version: 1, packages: {}, desktop: null, updatedAt: null }
+    const empty = { version: 1, packages: {}, updatedAt: null }
     if (this.ignoredFile === null) return empty
     const parsed = readJsonFile(this.ignoredFile)
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return empty
@@ -789,7 +808,6 @@ export class UpdaterService extends Service {
     return {
       version: 1,
       packages,
-      desktop: typeof parsed.desktop === 'string' && parsed.desktop.length > 0 ? parsed.desktop : null,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
     }
   }
@@ -802,7 +820,6 @@ export class UpdaterService extends Service {
         version: 1,
         updatedAt: new Date().toISOString(),
         packages: this.ignored.packages,
-        desktop: this.ignored.desktop,
       })
       return true
     } catch (error) {
@@ -812,19 +829,16 @@ export class UpdaterService extends Service {
   }
 
   /**
-   * Ignore exactly one version of one package, or the current desktop update.
-   * A newer version still appears, so this is a version pin, not a mute switch.
+   * Ignore exactly one version of one package. A newer version still appears,
+   * so this is a version pin, not a mute switch.
    */
   ignore(target, version) {
     const name = typeof target === 'string' ? target.trim() : ''
     const value = typeof version === 'string' ? version.trim() : ''
-    if (name.length === 0) return { ok: false, error: 'ignore() needs a package name or "desktop"' }
+    if (name.length === 0) return { ok: false, error: 'ignore() needs a package name' }
     if (!/^\d+\.\d+/.test(value)) return { ok: false, error: 'ignore() needs an exact version' }
     const previous = this.ignored
-    this.ignored =
-      name === 'desktop'
-        ? { ...previous, desktop: value, updatedAt: new Date().toISOString() }
-        : { ...previous, packages: { ...previous.packages, [name]: value }, updatedAt: new Date().toISOString() }
+    this.ignored = { ...previous, packages: { ...previous.packages, [name]: value }, updatedAt: new Date().toISOString() }
     if (!this.writeIgnored()) {
       this.ignored = previous
       return { ok: false, error: 'could not save the ignore list' }
@@ -837,14 +851,11 @@ export class UpdaterService extends Service {
   /** Remove an ignore entry so the next check can offer that version again. */
   unignore(target) {
     const name = typeof target === 'string' ? target.trim() : ''
-    if (name.length === 0) return { ok: false, error: 'unignore() needs a package name or "desktop"' }
+    if (name.length === 0) return { ok: false, error: 'unignore() needs a package name' }
     const previous = this.ignored
-    if (name === 'desktop') this.ignored = { ...previous, desktop: null, updatedAt: new Date().toISOString() }
-    else {
-      const packages = { ...previous.packages }
-      delete packages[name]
-      this.ignored = { ...previous, packages, updatedAt: new Date().toISOString() }
-    }
+    const packages = { ...previous.packages }
+    delete packages[name]
+    this.ignored = { ...previous, packages, updatedAt: new Date().toISOString() }
     if (!this.writeIgnored()) {
       this.ignored = previous
       return { ok: false, error: 'could not save the ignore list' }
@@ -962,48 +973,16 @@ export class UpdaterService extends Service {
     )
   }
 
-  /** Compare the installed Desktop with the public release service. */
-  async checkDesktopUpdate(registry, signal) {
-    const installation = resolveDesktopInstallation(this.ctx)
-    if (installation === null) {
-      return {
-        status: 'unavailable',
-        currentVersion: null,
-        latestVersion: null,
-        channel: 'stable',
-        reason: 'no DSH Desktop installation detected',
-        endpoint: this.desktopEndpoint,
-        canUpdate: false,
-        data: this.desktopData(),
-      }
-    }
-    const latest = await fetchDesktopVersion(this.desktopEndpoint, installation.channel, installation.version, signal)
-    const hasUpdate = latest.status === 'ok' && compareVersions(installation.version, latest.version) < 0
-    const line = releaseLine(installation.version)
-    const latestLine = latest.status === 'ok' ? releaseLine(latest.version) : null
-    const kind = latest.status === 'ok' ? releaseKind(installation.version, latest.version) : null
-    const ignoredVersion = this.ignored.desktop
-    const ignored = latest.status === 'ok' && ignoredVersion !== null && ignoredVersion === latest.version
-    const data = this.desktopData()
-    /** Stable may be promoted to the separate NEXT product; that is a migration, not a patch. */
-    const migration =
-      latest.status === 'ok' && hasUpdate && !ignored && latestLine === 'next' && line !== 'next' ? { ...data, targetVersion: latest.version } : null
+  /** Read the running DSH NEXT version and data-directory state. */
+  checkNext() {
+    const installation = resolveNextInstallation(this.ctx)
     return {
-      status: latest.status === 'ok' ? (ignored ? 'ignored' : hasUpdate ? 'update' : 'current') : latest.status,
-      currentVersion: installation.version,
-      latestVersion: latest.version,
-      channel: latest.channel ?? installation.channel,
-      reason: latest.reason,
-      endpoint: this.desktopEndpoint,
-      source: installation.source,
-      canUpdate: true,
-      line,
-      latestLine,
-      kind,
-      ignoredVersion,
-      migration,
-      requiresConfirmation: migration !== null,
-      data,
+      status: installation === null ? 'unavailable' : 'current',
+      product: DESKTOP_NEXT_PRODUCT,
+      currentVersion: installation?.version ?? null,
+      source: installation?.source ?? null,
+      reason: installation === null ? 'no DSH NEXT installation detected' : null,
+      data: this.desktopData(),
     }
   }
 
@@ -1034,12 +1013,12 @@ export class UpdaterService extends Service {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     let packages = []
-    let desktop = null
+    let next = null
     let engine = null
     try {
-      ;[packages, desktop, engine] = await Promise.all([
+      ;[packages, next, engine] = await Promise.all([
         this.sweepPackages(installed, dir, registry, controller.signal),
-        this.checkDesktop ? this.checkDesktopUpdate(registry, controller.signal) : null,
+        Promise.resolve(this.checkNext()),
         this.checkEngine ? this.checkEngineUpdate(registry, controller.signal) : null,
       ])
     } finally {
@@ -1052,9 +1031,9 @@ export class UpdaterService extends Service {
       profileDir: dir,
       packages,
       updates: packages.filter((entry) => entry.hasUpdate).map((entry) => entry.name),
-      desktop,
+      next,
       engine,
-      ignored: { packages: this.ignored.packages, desktop: this.ignored.desktop },
+      ignored: { packages: this.ignored.packages },
       compat: this.compat(),
       error: this.state.error,
     }
@@ -1062,7 +1041,7 @@ export class UpdaterService extends Service {
     this.state.error = null
     this.writeCachedReport(report)
     this.log(
-      `checked ${packages.length} package(s); ${report.updates.length} plugin update(s); desktop ${desktop?.status ?? 'off'}; engine ${engine?.status ?? 'off'}`,
+      `checked ${packages.length} package(s); ${report.updates.length} plugin update(s); next ${next?.status ?? 'off'}; engine ${engine?.status ?? 'off'}`,
     )
     return report
   }
@@ -1374,14 +1353,12 @@ export class UpdaterService extends Service {
       ok: true,
       autoCheck: this.autoCheck,
       registry: this.registry,
-      desktopEndpoint: this.desktopEndpoint,
       checking: this.state.checking === true,
       hasReport: this.state.report !== null,
       updates: this.state.report?.updates?.length ?? 0,
-      desktop: this.state.report?.desktop?.status ?? null,
+      next: this.state.report?.next?.status ?? null,
       engine: this.state.report?.engine?.status ?? null,
       ignoredPackages: Object.keys(this.ignored.packages).length,
-      ignoredDesktop: this.ignored.desktop,
       compat: this.compat(),
     }
   }
@@ -1442,8 +1419,7 @@ export function apply(ctx, config) {
 markRemoteMethod('check')
 markRemoteMethod('update')
 markRemoteMethod('status')
-markRemoteMethod('desktopData')
-markRemoteMethod('prepareDesktopUpdate')
-markRemoteMethod('repairDesktopData')
+markRemoteMethod('chooseDataFolder')
+markRemoteMethod('migrateDataHome')
 markRemoteMethod('ignore')
 markRemoteMethod('unignore')

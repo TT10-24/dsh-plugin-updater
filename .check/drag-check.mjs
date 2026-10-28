@@ -80,9 +80,17 @@ globalThis.document = {
 
 const report = {
   checkedAt: Date.now(),
-  packages: [],
-  updates: [],
-  desktop: { status: 'update', currentVersion: '2.0.18', latestVersion: '2.0.20', channel: 'stable', reason: null, canUpdate: true },
+  packages: [
+    { name: 'dsh-ops', installedVersion: '0.3.0', latestVersion: '0.4.0', hasUpdate: true, status: 'update', reason: null, repository: null, source: 'dependency' },
+  ],
+  updates: ['dsh-ops'],
+  next: {
+    status: 'current',
+    product: 'DSH NEXT',
+    currentVersion: '2.0.20-next',
+    reason: null,
+    data: { home: 'F:\\DSH-Home', pointer: 'F:\\DSH-Home', pointerMatchesHome: true, needsRepair: false, canSetHome: true, detected: true },
+  },
   engine: { status: 'current', currentVersion: '0.2.1-rc.2', latestVersion: '0.2.1-rc.2', reason: null, bundled: true },
   compat: { profileContext: true, pluginManager: true, desktopRuntime: true, dshHomePath: true, degraded: false },
   error: null,
