@@ -11,7 +11,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { UpdaterService, compareVersions } from '../index.js'
+import { UpdaterService, compareVersions, installSource, isSemver, repositoryFromSpec, repositoryIdentity } from '../index.js'
 
 const failures = []
 function equal(label, actual, expected) {
@@ -39,6 +39,18 @@ const versionCases = [
   ['v1.2.3', '1.2.3', 0],
 ]
 for (const [left, right, expected] of versionCases) equal(`compare(${left}, ${right})`, compareVersions(left, right), expected)
+
+equal('link spec is local', installSource('link:F:/work/my-plugin'), 'local')
+equal('file spec is local', installSource('file:../my-plugin.tgz'), 'local')
+equal('workspace spec is local', installSource('workspace:*'), 'local')
+equal('github spec is remote', installSource('github:me/github-plugin'), 'remote')
+equal('range spec is registry', installSource('^1.2.3'), 'registry')
+equal('npm alias is not a registry install', installSource('npm:other-package@1.0.0'), 'alias')
+equal('range is not a concrete target', isSemver('^1.2.3'), false)
+equal('concrete version is a valid target', isSemver('1.2.3-beta.1'), true)
+equal('github repository identity', repositoryIdentity('git+https://github.com/Me/Repo.git#readme'), 'github.com/me/repo')
+equal('github spec repository identity', repositoryFromSpec('github:me/repo#v1.0.0'), 'github.com/me/repo')
+equal('link spec has no repository identity', repositoryFromSpec('link:F:/work/my-plugin'), null)
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-updater-identity-'))
 const profileDir = path.join(root, 'profiles', 'desktop')
