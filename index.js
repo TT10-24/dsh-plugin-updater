@@ -159,6 +159,7 @@ export function installSource(spec) {
   if (typeof spec !== 'string' || spec.trim().length === 0) return 'unknown'
   const text = spec.trim()
   if (/^(?:link|file|workspace|portal):/i.test(text)) return 'local'
+  if (/^git\+file:/i.test(text)) return 'local'
   if (/^(?:git\+|git:|github:|gitlab:|bitbucket:|ssh:|https?:)/i.test(text)) return 'remote'
   if (/^npm:/i.test(text)) return 'alias'
   if (/^[./\\]/.test(text) || /^[A-Za-z]:[\\/]/.test(text)) return 'local'
@@ -177,6 +178,7 @@ export function repositoryFromSpec(spec) {
   const text = spec.trim()
   if (text.length === 0) return null
   if (/^(?:link|file|workspace|portal):/i.test(text)) return null
+  if (/^git\+file:/i.test(text)) return null
   if (/^github:/i.test(text)) {
     const body = text.slice('github:'.length).split('#')[0].replace(/^\/+/, '')
     const owner = body.split('/')[0]
@@ -204,6 +206,7 @@ export function repositoryIdentity(value) {
   text = text.replace(/^git\+/, '').replace(/^ssh:\/\/git@/, 'https://').replace(/^git@([^:]+):/, 'https://$1/')
   if (text.startsWith('github:')) text = 'https://github.com/' + text.slice('github:'.length)
   text = text.replace(/#.*$/, '').replace(/\/+$/, '').replace(/\.git$/, '')
+  if (/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(text)) text = 'https://github.com/' + text
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) text = 'https://' + text
   let url
   try {
