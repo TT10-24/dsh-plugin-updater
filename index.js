@@ -54,6 +54,8 @@ const REMOTE_SEGMENT = /^[A-Za-z0-9_$.-]+$/
 
 const REQUEST_TIMEOUT_MS = 12_000
 const REPORT_TTL_MS = 5 * 60_000
+/** Cached reports from an older identity model are discarded, not reused. */
+const REPORT_SCHEMA = 2
 
 /** A canonical SemVer the DSH NEXT runtime manifest may carry. */
 const CANONICAL_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
@@ -78,35 +80,146 @@ function markRemoteMethod(method) {
 }
 
 /**
- * Compare two dotted version identifiers; a prerelease ranks below its release.
+ * Parse a dotted version into its numeric core and SemVer prerelease parts.
+ * Build metadata is ignored, exactly as SemVer 2.0.0 specifies.
+ */
+function parseVersion(value) {
+  const text = String(value ?? '').trim().replace(/^[\^~><=\s]*v?/i, '')
+  if (text.length === 0) return null
+  const withoutBuild = text.split('+')[0]
+  const dash = withoutBuild.indexOf('-')
+  const core = dash < 0 ? withoutBuild : withoutBuild.slice(0, dash)
+  const prerelease = dash < 0 ? '' : withoutBuild.slice(dash + 1)
+  const parts = core.split('.')
+  if (parts.length === 0 || parts.length > 4 || !parts.every((part) => /^\d+$/.test(part))) return null
+  return {
+    numbers: parts.map((part) => Number(part)),
+    prerelease: prerelease.length === 0 ? [] : prerelease.split('.'),
+  }
+}
+
+/** SemVer prerelease precedence: numeric identifiers compare as numbers. */
+function comparePrerelease(left, right) {
+  if (left.length === 0 && right.length === 0) return 0
+  if (left.length === 0) return 1
+  if (right.length === 0) return -1
+  const length = Math.max(left.length, right.length)
+  for (let index = 0; index < length; index += 1) {
+    const a = left[index]
+    const b = right[index]
+    if (a === undefined) return -1
+    if (b === undefined) return 1
+    const aNumeric = /^\d+$/.test(a)
+    const bNumeric = /^\d+$/.test(b)
+    if (aNumeric && bNumeric) {
+      const difference = Number(a) - Number(b)
+      if (difference !== 0) return difference < 0 ? -1 : 1
+      continue
+    }
+    if (aNumeric !== bNumeric) return aNumeric ? -1 : 1
+    if (a !== b) return a < b ? -1 : 1
+  }
+  return 0
+}
+
+/**
+ * Compare two dotted version identifiers using SemVer 2.0.0 precedence.
+ * A prerelease ranks below its release; build metadata is ignored.
  * Exported for the offline self-check, not part of the plugin API.
  */
 export function compareVersions(left, right) {
-  const parse = (value) => {
-    const text = String(value ?? '').trim().replace(/^[\^~><=\s]*v?/i, '')
-    const plus = text.indexOf('+')
-    const clean = plus < 0 ? text : text.slice(0, plus)
-    const dash = clean.indexOf('-')
-    const core = dash < 0 ? clean : clean.slice(0, dash)
-    const prerelease = dash < 0 ? '' : clean.slice(dash + 1)
-    const numbers = core.split('.').map((part) => (/^\d+$/.test(part) ? Number(part) : Number.NaN))
-    return { numbers, core, prerelease }
+  const a = parseVersion(left)
+  const b = parseVersion(right)
+  if (a === null || b === null) {
+    const first = String(left ?? '').trim()
+    const second = String(right ?? '').trim()
+    return first === second ? 0 : first < second ? -1 : 1
   }
-  const a = parse(left)
-  const b = parse(right)
-  if (a.core === b.core && a.prerelease === b.prerelease) return 0
-  if (a.numbers.every(Number.isSafeInteger) && b.numbers.every(Number.isSafeInteger)) {
-    const length = Math.max(a.numbers.length, b.numbers.length)
-    for (let index = 0; index < length; index += 1) {
-      const leftNumber = a.numbers[index] ?? 0
-      const rightNumber = b.numbers[index] ?? 0
-      if (leftNumber !== rightNumber) return leftNumber < rightNumber ? -1 : 1
-    }
-    if (a.prerelease === b.prerelease) return 0
-    if (a.prerelease === '') return 1
-    if (b.prerelease === '') return -1
+  const length = Math.max(a.numbers.length, b.numbers.length)
+  for (let index = 0; index < length; index += 1) {
+    const first = a.numbers[index] ?? 0
+    const second = b.numbers[index] ?? 0
+    if (first !== second) return first < second ? -1 : 1
   }
-  return a.core === b.core ? (a.prerelease === b.prerelease ? 0 : a.prerelease < b.prerelease ? -1 : 1) : a.core < b.core ? -1 : 1
+  return comparePrerelease(a.prerelease, b.prerelease)
+}
+
+/** Whether a string is a concrete version this updater can target. */
+export function isSemver(value) {
+  return typeof value === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value.trim())
+}
+
+/**
+ * Classify a dependency spec. Only a registry install may be compared with
+ * npm; a link:/file: plugin can share a name with an unrelated package, and
+ * updating it would replace local code with a stranger's package.
+ * Exported for the offline self-check, not part of the plugin API.
+ */
+export function installSource(spec) {
+  if (typeof spec !== 'string' || spec.trim().length === 0) return 'unknown'
+  const text = spec.trim()
+  if (/^(?:link|file|workspace|portal):/i.test(text)) return 'local'
+  if (/^(?:git\+|git:|github:|gitlab:|bitbucket:|ssh:|https?:)/i.test(text)) return 'remote'
+  if (/^npm:/i.test(text)) return 'alias'
+  if (/^[./\\]/.test(text) || /^[A-Za-z]:[\\/]/.test(text)) return 'local'
+  return 'registry'
+}
+
+/**
+ * The repository a non-registry dependency spec points at, when it has one.
+ * A GitHub install may still be checked against npm, but only while the
+ * registry package points at the same repository. link:/file:/workspace:
+ * installs never produce an identity: they are local code, not a release.
+ * Exported for the offline self-check, not part of the plugin API.
+ */
+export function repositoryFromSpec(spec) {
+  if (typeof spec !== 'string') return null
+  const text = spec.trim()
+  if (text.length === 0) return null
+  if (/^(?:link|file|workspace|portal):/i.test(text)) return null
+  if (/^github:/i.test(text)) {
+    const body = text.slice('github:'.length).split('#')[0].replace(/^\/+/, '')
+    const owner = body.split('/')[0]
+    const repo = body.split('/')[1]
+    return owner.length > 0 && repo.length > 0 ? repositoryIdentity('https://github.com/' + owner + '/' + repo) : null
+  }
+  if (/^(?:git\+|git:|ssh:|https?:)/i.test(text)) {
+    const url = text.replace(/^git\+/, '').split('#')[0]
+    if (/\.(?:tgz|tar\.gz|zip)$/i.test(url)) return null
+    return repositoryIdentity(url)
+  }
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(text)) return repositoryIdentity('https://github.com/' + text)
+  return null
+}
+
+/**
+ * Reduce a repository URL to a comparable owner/repo identity.
+ * A package that only shares a name must not pass this comparison.
+ * Exported for the offline self-check, not part of the plugin API.
+ */
+export function repositoryIdentity(value) {
+  if (typeof value !== 'string') return null
+  let text = value.trim().toLowerCase()
+  if (text.length === 0) return null
+  text = text.replace(/^git\+/, '').replace(/^ssh:\/\/git@/, 'https://').replace(/^git@([^:]+):/, 'https://$1/')
+  if (text.startsWith('github:')) text = 'https://github.com/' + text.slice('github:'.length)
+  text = text.replace(/#.*$/, '').replace(/\/+$/, '').replace(/\.git$/, '')
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) text = 'https://' + text
+  let url
+  try {
+    url = new URL(text)
+  } catch {
+    return null
+  }
+  const host = url.hostname.replace(/^www\./, '')
+  const parts = url.pathname.split('/').filter(Boolean)
+  if (parts.length < 2) return null
+  if (host === 'github.com' || host === 'bitbucket.org') return host + '/' + parts[0] + '/' + parts[1]
+  if (host === 'gitlab.com') {
+    const marker = parts.indexOf('-')
+    return host + '/' + (marker > 0 ? parts.slice(0, marker) : parts).join('/')
+  }
+  return host + '/' + parts.join('/')
 }
 
 /** Compare two absolute paths the way this host's file system does. */
@@ -274,8 +387,8 @@ export function desktopNextPlan(ctx, profileDir, fallbackHome = null) {
 }
 
 /** One version answer as a comparable outcome instead of a thrown error. */
-function outcome(status, version, reason) {
-  return { status, version: version ?? null, reason: reason ?? null }
+function outcome(status, version, reason, extra = {}) {
+  return { status, version: version ?? null, reason: reason ?? null, ...extra }
 }
 
 /** Read one JSON file, or null when it is missing or malformed. */
@@ -299,22 +412,34 @@ function safeGet(ctx, key) {
   }
 }
 
-/** Read a package's `latest` manifest from one npm registry. */
-export async function fetchLatestVersion(registry, name, signal) {
+/** Read one manifest (a version or a dist-tag) from an npm registry. */
+async function fetchManifest(registry, name, reference, signal) {
   const base = String(registry ?? DEFAULT_REGISTRY).replace(/\/+$/, '')
-  const url = `${base}/${encodeURIComponent(name)}/latest`
+  const url = `${base}/${encodeURIComponent(name)}/${encodeURIComponent(reference)}`
+  const label = reference === 'latest' ? name : name + '@' + reference
   try {
     const response = await fetch(url, { headers: { accept: 'application/json' }, signal, redirect: 'follow' })
-    if (response.status === 404) return outcome('missing', null, `registry has no package ${name}`)
-    if (!response.ok) return outcome('error', null, `registry answered HTTP ${response.status}`)
+    if (response.status === 404) return outcome('missing', null, 'registry has no package ' + label)
+    if (!response.ok) return outcome('error', null, 'registry answered HTTP ' + response.status)
     const body = await response.json()
     const version = typeof body?.version === 'string' ? body.version : null
     if (version === null) return outcome('error', null, 'registry answer carried no version')
-    return outcome('ok', version, null)
+    const repository = typeof body?.repository === 'string' ? body.repository : typeof body?.repository?.url === 'string' ? body.repository.url : null
+    return outcome('ok', version, null, { repository })
   } catch (error) {
     if (signal?.aborted) return outcome('error', null, 'cancelled')
-    return outcome('error', null, `registry request failed: ${error instanceof Error ? error.message : String(error)}`)
+    return outcome('error', null, 'registry request failed: ' + (error instanceof Error ? error.message : String(error)))
   }
+}
+
+/** Read a package's `latest` manifest from one npm registry. */
+export async function fetchLatestVersion(registry, name, signal) {
+  return fetchManifest(registry, name, 'latest', signal)
+}
+
+/** Read the manifest for one exact version, used to verify package identity. */
+export async function fetchPackageVersion(registry, name, version, signal) {
+  return fetchManifest(registry, name, version, signal)
 }
 
 /** The version a dependency spec pins, or null for a range, link, workspace, git or tarball spec. */
@@ -324,17 +449,32 @@ function versionFromSpec(spec) {
   return /^\d+\.\d+/.test(trimmed) ? trimmed : null
 }
 
+/** Read an installed package's manifest, or null when it is missing or malformed. */
+function readPackageManifest(dir) {
+  const parsed = readJsonFile(path.join(dir, 'package.json'))
+  return parsed !== null && typeof parsed === 'object' ? parsed : null
+}
+
 /** The version an installed package's own manifest reports, when it is readable. */
 function readInstalledVersion(dir) {
-  const parsed = readJsonFile(path.join(dir, 'package.json'))
-  return typeof parsed?.version === 'string' && parsed.version.length > 0 ? parsed.version : null
+  const version = readPackageManifest(dir)?.version
+  return typeof version === 'string' && version.length > 0 ? version : null
 }
 
 /** Best-effort description of the source repository recorded by an installed package. */
 function readRepository(dir) {
-  const parsed = readJsonFile(path.join(dir, 'package.json'))
-  const repository = typeof parsed?.repository === 'string' ? parsed.repository : parsed?.repository?.url
+  const manifest = readPackageManifest(dir)
+  const repository = typeof manifest?.repository === 'string' ? manifest.repository : manifest?.repository?.url
   return typeof repository === 'string' && repository.length > 0 ? repository : null
+}
+
+/** Whether node_modules/<name> is a link/junction rather than an installed copy. */
+function isLinkedPackage(dir) {
+  try {
+    return fs.lstatSync(dir).isSymbolicLink()
+  } catch {
+    return false
+  }
 }
 
 /** Read the profile manifest that lists the plugins this profile installed. */
@@ -869,7 +1009,7 @@ export class UpdaterService extends Service {
   readCachedReport() {
     if (this.lastReportFile === null) return null
     const parsed = readJsonFile(this.lastReportFile)
-    return parsed !== null && typeof parsed === 'object' ? parsed : null
+    return parsed !== null && typeof parsed === 'object' && parsed.schema === REPORT_SCHEMA ? parsed : null
   }
 
   /** Persist the newest report so a later boot can answer instantly. */
@@ -916,14 +1056,29 @@ export class UpdaterService extends Service {
    */
   async installedPackages(dir) {
     const found = new Map()
+    /** Merge one source into the name-keyed map, case-insensitively. */
+    const add = (name, patch) => {
+      const key = name.toLowerCase()
+      const current = found.get(key)
+      if (current === undefined) {
+        found.set(key, { name, spec: null, source: 'dependency', manifestVersion: null, ambiguous: false, ...patch })
+        return
+      }
+      if (patch.spec !== undefined && current.spec === null) current.spec = patch.spec
+      if (patch.source === 'dependency') current.source = 'dependency'
+      if (patch.manifestVersion !== undefined && patch.manifestVersion !== null) {
+        if (current.manifestVersion !== null && current.manifestVersion !== patch.manifestVersion) current.ambiguous = true
+        current.manifestVersion = current.manifestVersion ?? patch.manifestVersion
+      }
+    }
     if (dir !== null) {
       try {
         const { parsed } = readProfileManifest(dir)
         for (const [name, spec] of Object.entries(parsed?.dependencies ?? {})) {
-          if (typeof spec === 'string') found.set(name, { spec, source: 'dependency' })
+          if (typeof spec === 'string') add(name, { spec, source: 'dependency' })
         }
       } catch (error) {
-        this.state.error = `could not read ${path.join(dir, 'package.json')}: ${error instanceof Error ? error.message : String(error)}`
+        this.state.error = 'could not read ' + path.join(dir, 'package.json') + ': ' + (error instanceof Error ? error.message : String(error))
       }
     } else {
       this.state.error = 'could not resolve the profile directory'
@@ -932,42 +1087,95 @@ export class UpdaterService extends Service {
       const manager = safeGet(this.ctx, 'pluginManager')
       const bundles = await manager?.listBundles?.()
       for (const bundle of bundles ?? []) {
-        if (bundle?.installed !== true || typeof bundle.name !== 'string') continue
-        const existing = found.get(bundle.name)
-        found.set(bundle.name, {
-          spec: existing?.spec ?? null,
-          source: existing === undefined ? 'bundle' : existing.source,
-          manifestVersion: typeof bundle.version === 'string' ? bundle.version : null,
-        })
+        if (bundle?.installed !== true || typeof bundle.name !== 'string' || bundle.name.length === 0) continue
+        add(bundle.name, { source: 'bundle', manifestVersion: typeof bundle.version === 'string' ? bundle.version : null })
       }
     } catch (error) {
-      this.log(`could not list bundles: ${error instanceof Error ? error.message : String(error)}`)
+      this.log('could not list bundles: ' + (error instanceof Error ? error.message : String(error)))
     }
     return found
   }
 
-  /** Compare every installed plugin package with the registry. */
+  /**
+   * Compare every installed plugin package with the registry.
+   *
+   * Only a package installed from the registry may be compared. A link:, file:,
+   * git or workspace install is reported as local: an unrelated npm package
+   * that merely shares its name must never become an update target.
+   */
   async sweepPackages(installed, dir, registry, signal) {
     return Promise.all(
-      [...installed].map(async ([name, entry]) => {
+      [...installed.values()].map(async (entry) => {
+        const name = entry.name
         const packageDir = dir === null ? null : path.join(dir, 'node_modules', name)
+        const manifest = packageDir === null ? null : readPackageManifest(packageDir)
+        const manifestVersion = typeof manifest?.version === 'string' && manifest.version.length > 0 ? manifest.version : null
+        const installedVersion = manifestVersion ?? entry.manifestVersion ?? versionFromSpec(entry.spec)
+        const repository = packageDir === null ? null : readRepository(packageDir)
+        const specKind = installSource(entry.spec)
+        const hasSpec = typeof entry.spec === 'string' && entry.spec.trim().length > 0
+        const linked = packageDir !== null && isLinkedPackage(packageDir)
+        const specRepository = repositoryFromSpec(entry.spec)
+        const registryManaged =
+          !entry.ambiguous &&
+          !linked &&
+          installedVersion !== null &&
+          (specKind === 'registry' ? true : specKind === 'remote' ? specRepository !== null : !hasSpec ? packageDir !== null : false)
+        const ignoredVersion = this.ignored.packages[name] ?? this.ignored.packages[name.toLowerCase()] ?? null
+        if (!registryManaged) {
+          const status = entry.ambiguous ? 'conflict' : installedVersion === null ? 'bypassed' : 'local'
+          const reason = entry.ambiguous
+            ? 'multiple installed bundles report different versions for this name'
+            : linked || specKind === 'local'
+              ? 'installed from a local link or folder; not checked against the registry'
+              : specKind === 'remote'
+                ? 'installed from a git or URL source without a verifiable repository'
+                : specKind === 'alias'
+                  ? 'installed through an npm alias; its registry name is not the installed package'
+                  : 'no registry-managed version to compare'
+          return {
+            name,
+            installedVersion: installedVersion ?? (typeof entry.spec === 'string' ? entry.spec : ''),
+            latestVersion: null,
+            hasUpdate: false,
+            ignoredVersion,
+            status,
+            reason,
+            repository,
+            source: entry.source,
+            managed: false,
+            installSource: hasSpec ? specKind : 'bundle',
+          }
+        }
         const latest = await fetchLatestVersion(registry, name, signal)
-        const installedVersion =
-          versionFromSpec(entry.spec) ?? entry.manifestVersion ?? (packageDir === null ? null : readInstalledVersion(packageDir))
-        const comparable = installedVersion !== null
-        const ignoredVersion = this.ignored.packages[name] ?? null
+        const installedRepository = repositoryIdentity(repository)
+        const registryRepository = repositoryIdentity(latest.repository)
+        const expectedRepository = installedRepository ?? specRepository
+        const manifestNameMismatch =
+          typeof manifest?.name === 'string' && manifest.name.length > 0 && manifest.name.toLowerCase() !== name.toLowerCase()
+        const identityMismatch = expectedRepository !== null && registryRepository !== null && expectedRepository !== registryRepository
+        const identityUnverified = specKind === 'remote' && (expectedRepository === null || registryRepository === null)
+        const foreign = latest.status === 'ok' && (manifestNameMismatch || identityMismatch || identityUnverified)
         const ignored = latest.status === 'ok' && ignoredVersion !== null && ignoredVersion === latest.version
-        const hasUpdate = latest.status === 'ok' && comparable && !ignored && compareVersions(installedVersion, latest.version) < 0
+        const hasUpdate = latest.status === 'ok' && !foreign && !ignored && compareVersions(installedVersion, latest.version) < 0
         return {
           name,
-          installedVersion: installedVersion ?? (typeof entry.spec === 'string' ? entry.spec : ''),
-          latestVersion: latest.version,
+          installedVersion,
+          latestVersion: foreign ? null : latest.version,
           hasUpdate,
           ignoredVersion,
-          status: latest.status === 'ok' ? (ignored ? 'ignored' : hasUpdate ? 'update' : comparable ? 'current' : 'bypassed') : latest.status,
-          reason: latest.reason,
-          repository: packageDir === null ? null : readRepository(packageDir),
+          status: latest.status === 'ok' ? (foreign ? 'foreign' : ignored ? 'ignored' : hasUpdate ? 'update' : 'current') : latest.status,
+          reason: foreign
+            ? identityUnverified
+              ? 'the registry package has no repository that matches the installed source'
+              : 'the registry package has the same name but a different repository or package name'
+            : latest.reason,
+          repository,
+          specRepository,
+          registryRepository: latest.status === 'ok' ? latest.repository : null,
           source: entry.source,
+          managed: true,
+          installSource: hasSpec ? specKind : 'bundle',
         }
       }),
     )
@@ -1026,6 +1234,7 @@ export class UpdaterService extends Service {
     }
 
     const report = {
+      schema: REPORT_SCHEMA,
       checkedAt: Date.now(),
       registry,
       profileDir: dir,
@@ -1068,11 +1277,9 @@ export class UpdaterService extends Service {
     if (manager === undefined || manager === null) {
       return { ok: false, name, version: null, stage: 'install', application: 'failed', error: 'the plugin manager is not active in this profile', restored: false }
     }
-    const installOptions = { enabled: true }
-    if (typeof requestId === 'string' && requestId.length > 0) installOptions.requestId = requestId
-    const target = typeof version === 'string' && version.length > 0 ? `${name}@${version}` : name
     const profileDir = this.profileDir()
     const packageDir = profileDir === null ? null : path.join(profileDir, 'node_modules', name)
+    const packageManifest = packageDir === null ? null : readPackageManifest(packageDir)
     const previousVersion = packageDir === null ? null : readInstalledVersion(packageDir)
     let originalSpec = null
     let wasSelected = false
@@ -1085,7 +1292,118 @@ export class UpdaterService extends Service {
         originalSpec = null
       }
     }
-    this.trace('update:start', { name, version, target, requestId: requestId ?? null, previousVersion, originalSpec, wasSelected })
+
+    /** A name collision is only safe while the installed copy can be traced to the same project. */
+    const hasSpec = typeof originalSpec === 'string' && originalSpec.trim().length > 0
+    const specKind = installSource(originalSpec)
+    const specRepository = repositoryFromSpec(originalSpec)
+    const linked = packageDir !== null && isLinkedPackage(packageDir)
+    const registryManaged =
+      !linked &&
+      (specKind === 'registry' ? true : specKind === 'remote' ? specRepository !== null : !hasSpec ? packageDir !== null : false)
+    if (!registryManaged) {
+      const reason =
+        linked || specKind === 'local'
+          ? 'this plugin is installed from a local link or folder; update it from its source, not from npm'
+          : specKind === 'remote'
+            ? 'this plugin is installed from a git or URL source without a verifiable repository; update it from its source'
+            : specKind === 'alias'
+              ? 'this plugin is installed through an npm alias; its registry name is not the installed package'
+              : 'this plugin has no registry-managed install to update'
+      this.trace('update:precheck', { name, code: 'not-registry', specKind, linked })
+      return { ok: false, name, version: null, stage: 'precheck', application: 'blocked', code: 'not-registry', error: reason, restored: false }
+    }
+
+    let targetVersion = typeof version === 'string' && version.trim().length > 0 ? version.trim() : null
+    if (targetVersion !== null && !isSemver(targetVersion)) {
+      return {
+        ok: false,
+        name,
+        version: targetVersion,
+        stage: 'precheck',
+        application: 'blocked',
+        code: 'invalid-version',
+        error: targetVersion + ' is not a concrete version',
+        restored: false,
+      }
+    }
+    if (targetVersion === null) {
+      const registry = await this.preferredRegistry()
+      const latest = await fetchLatestVersion(registry, name)
+      if (latest.status !== 'ok' || typeof latest.version !== 'string') {
+        return {
+          ok: false,
+          name,
+          version: null,
+          stage: 'precheck',
+          application: 'failed',
+          code: 'latest-unavailable',
+          error: latest.reason ?? 'could not resolve the latest published version',
+          restored: false,
+        }
+      }
+      targetVersion = latest.version
+    }
+
+    /** Never downgrade: a stale report, a moved dist-tag or a direct call can all be older. */
+    const guardVersion = previousVersion ?? versionFromSpec(originalSpec)
+    if (guardVersion !== null && compareVersions(guardVersion, targetVersion) >= 0) {
+      this.trace('update:precheck', { name, code: 'not-newer', previousVersion: guardVersion, targetVersion })
+      return {
+        ok: false,
+        name,
+        version: targetVersion,
+        stage: 'precheck',
+        application: 'blocked',
+        code: 'not-newer',
+        error: targetVersion + ' is not newer than the installed ' + guardVersion,
+        restored: false,
+      }
+    }
+
+    /** Last line of defence against a same-name package from a different project. */
+    const installedRepository = repositoryIdentity(
+      typeof packageManifest?.repository === 'string' ? packageManifest.repository : packageManifest?.repository?.url,
+    )
+    const expectedRepository = installedRepository ?? specRepository
+    const requireVerification = specKind === 'remote'
+    if (expectedRepository !== null || requireVerification) {
+      const registry = await this.preferredRegistry()
+      const published = await fetchPackageVersion(registry, name, targetVersion)
+      const publishedRepository = repositoryIdentity(published.repository)
+      if (published.status !== 'ok' || publishedRepository === null) {
+        if (requireVerification) {
+          this.trace('update:precheck', { name, code: 'identity-unverified', expectedRepository, publishedStatus: published.status })
+          return {
+            ok: false,
+            name,
+            version: targetVersion,
+            stage: 'precheck',
+            application: 'blocked',
+            code: 'identity-unverified',
+            error: 'could not verify that ' + name + '@' + targetVersion + ' belongs to the installed repository',
+            restored: false,
+          }
+        }
+      } else if (publishedRepository !== expectedRepository) {
+        this.trace('update:precheck', { name, code: 'identity-mismatch', expectedRepository, publishedRepository })
+        return {
+          ok: false,
+          name,
+          version: targetVersion,
+          stage: 'precheck',
+          application: 'blocked',
+          code: 'identity-mismatch',
+          error: name + '@' + targetVersion + ' belongs to a different repository (' + publishedRepository + ')',
+          restored: false,
+        }
+      }
+    }
+
+    const installOptions = { enabled: true }
+    if (typeof requestId === 'string' && requestId.length > 0) installOptions.requestId = requestId
+    const target = name + '@' + targetVersion
+    this.trace('update:start', { name, version: targetVersion, target, requestId: requestId ?? null, previousVersion, originalSpec, wasSelected })
 
     let removed
     try {
@@ -1097,9 +1415,9 @@ export class UpdaterService extends Service {
         const selection = await this.restoreBundleSelection(manager, name, wasSelected)
         const code = /stop-profile/.test(message) ? 'stop-profile' : 'bundle-in-use'
         this.trace('update:fallback-start', { name, code, wasSelected, selection, thrown: true })
-        return this.installOverRunning(manager, name, version, target, requestId, previousVersion, originalSpec, code, wasSelected)
+        return this.installOverRunning(manager, name, targetVersion, target, requestId, previousVersion, originalSpec, code, wasSelected)
       }
-      return { ok: false, name, version: version ?? null, spec: target, stage: 'remove', application: 'failed', error: message, restored: false }
+      return { ok: false, name, version: targetVersion, spec: target, stage: 'remove', application: 'failed', error: message, restored: false }
     }
     const removedOk = removed?.application === 'applied' || removed?.application === 'restart-required'
     if (!removedOk) {
@@ -1121,12 +1439,12 @@ export class UpdaterService extends Service {
       if (code === 'bundle-in-use' || code === 'stop-profile' || /bundle-in-use|stop-profile/.test(message)) {
         const selection = await this.restoreBundleSelection(manager, name, wasSelected)
         this.trace('update:fallback-start', { name, code, wasSelected, selection })
-        return this.installOverRunning(manager, name, version, target, requestId, previousVersion, originalSpec, code ?? 'bundle-in-use', wasSelected)
+        return this.installOverRunning(manager, name, targetVersion, target, requestId, previousVersion, originalSpec, code ?? 'bundle-in-use', wasSelected)
       }
       return {
         ok: false,
         name,
-        version: version ?? null,
+        version: targetVersion,
         spec: target,
         stage: 'remove',
         application: typeof removed?.application === 'string' ? removed.application : 'failed',
@@ -1143,7 +1461,7 @@ export class UpdaterService extends Service {
       const message = error instanceof Error ? error.message : String(error)
       const restored = await this.restoreInstall(manager, name, previousVersion, originalSpec)
       this.trace('update:install-threw', { name, target, message, restored })
-      return { ok: false, name, version: version ?? null, spec: target, stage: 'install', application: 'failed', error: message, restored }
+      return { ok: false, name, version: targetVersion, spec: target, stage: 'install', application: 'failed', error: message, restored }
     }
     const installed = result?.application === 'applied' || result?.application === 'restart-required'
     if (!installed) {
@@ -1158,7 +1476,7 @@ export class UpdaterService extends Service {
       return {
         ok: false,
         name,
-        version: version ?? null,
+        version: targetVersion,
         spec: target,
         stage: 'install',
         application: typeof result?.application === 'string' ? result.application : 'failed',
@@ -1171,7 +1489,7 @@ export class UpdaterService extends Service {
     return {
       ok: true,
       name,
-      version: typeof version === 'string' ? version : null,
+      version: targetVersion,
       spec: target,
       changed: result?.changed === true,
       application: typeof result?.application === 'string' ? result.application : 'applied',
