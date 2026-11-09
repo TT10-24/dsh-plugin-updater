@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.7
 
 - **Fixed same-name plugins being offered as updates.** A plugin installed with `link:`, `file:`, `workspace:` or a git/URL spec is no longer compared with npm by name alone. Local links are reported as local; a GitHub install is only compared when the registry package points at the same repository.
 - **A name collision can no longer replace a different package.** The check now compares the installed package's `repository` with the registry manifest and marks a same-name/different-repository package as `foreign` instead of offering an update.
