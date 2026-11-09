@@ -35,6 +35,11 @@ jobs:
           node .check/render-check.mjs ./client.js
           node .check/drag-check.mjs ./client.js
 
+      - name: Update identity and version ordering
+        run: |
+          node --check .check/identity-check.mjs
+          node .check/identity-check.mjs
+
       - name: Site files
         run: |
           test -f site/index.html

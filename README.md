@@ -21,6 +21,9 @@
   - 面板显示当前 DSH NEXT 版本与数据目录；DSH NEXT 自身负责应用更新。
 - **插件检查与更新**
   - 读取你的 profile 与实时 bundle 列表，对比 npm registry。
+  - 只检查从 registry 安装的包；`link:`、`file:`、`workspace:` 等本地来源不会被同名 npm 包顶替。GitHub 安装只在 registry 包的仓库与安装来源一致时才比较。
+  - 同名但仓库不同的包会被跳过，并计入面板的「跳过」提示；不会出现在更新列表里。
+  - 更新前再次校验来源与版本：不会把插件降级，也不会安装来源不明的同名包。
   - 单个更新或一键全部更新；已完成的行立即消失。
   - DSH NEXT 拒绝热卸载的宿主插件会自动改为覆盖安装，并提示重启后生效。
 - **数据目录迁移**
@@ -167,6 +170,10 @@ DSH NEXT 默认使用 `~/.dsh`，只读取自己的位置文件。面板的 **DS
 
 安装会失败并恢复旧版本，面板会显示待批准的构建脚本。你可以在插件页手动批准后重试。
 
+**为什么本地安装的插件不显示更新？**
+
+`link:`、`file:`、`workspace:` 是本地代码，没有可靠的 registry 版本可比。更新器会把它们标为「本地」并跳过，避免同名 npm 包把本地插件替换掉。GitHub 安装只有在 registry 包的 `repository` 与安装来源一致时才显示更新。
+
 **怎么固定版本或回滚？**
 
 安装时用 `#v0.3.6` 固定 tag；回滚就重新安装旧 tag，然后重启 DSH NEXT。
@@ -201,6 +208,7 @@ DSH NEXT 默认使用 `~/.dsh`，只读取自己的位置文件。面板的 **DS
 node .check/locale-check.mjs ./client.js
 node .check/render-check.mjs ./client.js
 node .check/drag-check.mjs ./client.js
+node .check/identity-check.mjs
 ```
 
 ## English

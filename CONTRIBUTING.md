@@ -26,6 +26,7 @@ node --check protocol.js
 node .check/locale-check.mjs ./client.js
 node .check/render-check.mjs ./client.js
 node .check/drag-check.mjs ./client.js
+node .check/identity-check.mjs
 ```
 
 Host 自检需要 DSH 安装目录和真实 profile，只在本机运行；GitHub Actions 只跑纯 Node 检查：

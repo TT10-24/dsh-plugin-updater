@@ -179,13 +179,16 @@ console.log('status:', JSON.stringify(status))
 const single = await fetchLatestVersion('https://registry.npmjs.org', '@deepseek-ai/dsh', new AbortController().signal)
 console.log('engine registry answer:', JSON.stringify(single))
 
-/** Update path: remove first, then install the exact target. */
+/** Update path: remove first, then install the exact target (never a downgrade). */
 const installedVersion = JSON.parse(fs.readFileSync(path.join(profileDir, 'node_modules', 'dsh-ops', 'package.json'), 'utf8')).version
-const updateResult = await service.update('dsh-ops', '0.4.2', 'req-selfcheck')
+const [major, minor, patch] = installedVersion.split('-')[0].split('.').map((part) => Number.parseInt(part, 10))
+const successTarget = major + '.' + minor + '.' + (patch + 1)
+const failedTarget = major + '.' + minor + '.' + (patch + 2)
+const updateResult = await service.update('dsh-ops', successTarget, 'req-selfcheck')
 console.log('update result:', JSON.stringify(updateResult))
 console.log('update calls:', JSON.stringify(calls))
 if (calls[0]?.op !== 'remove' || calls[0]?.name !== 'dsh-ops') failures.push('update did not remove the installed bundle first')
-if (calls[1]?.op !== 'install' || calls[1]?.spec !== 'dsh-ops@0.4.2') failures.push('update did not install the exact target afterwards')
+if (calls[1]?.op !== 'install' || calls[1]?.spec !== 'dsh-ops@' + successTarget) failures.push('update did not install the exact target afterwards')
 if (calls[1]?.requestId !== 'req-selfcheck') failures.push('update did not forward the client request id to installBundle')
 if (updateResult.ok !== true) failures.push(`update reported failure: ${updateResult.error}`)
 
@@ -197,7 +200,7 @@ ctx2.provide('pluginManager', {
   removeBundle: async (name) => ({ changed: true, application: 'applied', stage: 'remove', target: name }),
   installBundle: async (spec) => {
     restoreCalls.push(spec)
-    if (spec.endsWith('@99.99.99')) throw new Error('incompatible-version')
+    if (spec.endsWith('@' + failedTarget)) throw new Error('incompatible-version')
     return { changed: true, application: 'applied', stage: 'install', target: spec }
   },
 })
@@ -206,7 +209,7 @@ const failingData = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-updater-fail-'))
 failing.dataDir = failingData
 failing.lastReportFile = path.join(failingData, 'last-report.json')
 failing.ignoredFile = path.join(failingData, 'ignored.json')
-const failedUpdate = await failing.update('dsh-ops', '99.99.99')
+const failedUpdate = await failing.update('dsh-ops', failedTarget)
 console.log('failed update result:', JSON.stringify(failedUpdate), 'restore calls:', JSON.stringify(restoreCalls))
 if (failedUpdate.ok !== false) failures.push('failed update reported success')
 if (failedUpdate.restored !== true) failures.push('failed update did not restore the previous version')

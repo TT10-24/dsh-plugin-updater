@@ -52,6 +52,39 @@ this.typertRemote = Object.freeze({ service: this, serviceKey: 'pluginUpdater', 
 
 方法标记通过 `@deepseek-ai/dsh-typert-protocol/remote-methods` 原型描述符写入，因此不需要引入 typert 包，也不需要编译。
 
+## 更新来源与身份
+
+只看包名是不够的：本地链接的插件可能与 npm 上另一个包同名，版本还更高。0.3.7 起，检查与更新都先确认“这是不是同一个项目”。
+
+### 检查阶段
+
+`installedPackages()` 把 profile 依赖与 `listBundles()` 合并，键名大小写无关；每个条目保留依赖 spec、实际 `package.json` 版本和 `node_modules` 是否为链接。`sweepPackages()` 再按来源分流：
+
+| 来源 | 处理 |
+| --- | --- |
+| 版本号 / 范围（registry） | 请求 npm `latest`，比较版本与仓库 |
+| `link:` / `file:` / `workspace:` | 不请求 npm，状态 `local` |
+| `github:` / `git+` / git URL | 只有能从 spec 解析出仓库，且 registry 包的 `repository` 指向同一仓库时才比较 |
+| `npm:` 别名 | 不比较，状态 `local` |
+| 无 spec、仅 bundle | `node_modules` 存在且不是链接时按 registry 包处理 |
+
+仓库比较把 URL 归一化成 `host/owner/repo`，忽略 `git+`、`.git`、`#fragment` 和 GitHub 的 `/tree/...` 后缀。同名但仓库不同，或 GitHub 安装无法验证仓库时，返回 `foreign`，不进入更新列表。
+
+两个 bundle 对同一个包名报告不同版本时返回 `conflict`，不要猜哪一个才是“已安装”。旧缓存报告没有 `schema: 2` 会被丢弃，避免升级后沿用旧的身份判断。
+
+### 更新阶段
+
+`update(name, version, requestId)` 在移除任何文件之前按顺序检查：
+
+1. **来源**：本地链接、`file:`、`workspace:`、别名、无法验证仓库的 git/URL 安装直接拒绝（`code: 'not-registry'`）。
+2. **版本格式**：目标必须是具体的 SemVer（`x.y.z`，可带预发布），不接受范围或 tag。
+3. **不降级**：目标版本必须严格高于已安装版本，否则拒绝（`code: 'not-newer'`）。
+4. **仓库身份**：安装了 `repository` 或来源是 GitHub 时，再取 `<name>@<version>` 的 manifest；仓库不一致拒绝（`identity-mismatch`），GitHub 来源无法验证时拒绝（`identity-unverified`）。
+
+只有四项都通过，才调用 `removeBundle` 与 `installBundle`。这样即使报告过期、dist-tag 回退或有人直接调用 Remote，也不会把插件降级或换成同名包。
+
+版本比较使用 SemVer 2.0.0：预发布标识按点分段，纯数字段按数值比较（`beta.10 > beta.2`），数字段低于字母段，构建元数据不参与排序。
+
 ## 更新一个插件：remove + install，必要时覆盖安装
 
 DSH 插件管理器的 `installBundle` 在 HMR 环境下会拒绝“已经存在于 profile 依赖”的包（`already-installed`），它是给“新增插件”用的。官方插件页的更新路径是：

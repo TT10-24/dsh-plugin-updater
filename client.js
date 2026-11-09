@@ -123,7 +123,7 @@ window.__ModuleLoader__.load({
       updated: '更新完成',
       restartHint: '重启 DSH NEXT 后生效',
       lastChecked: '上次检查 {time}',
-      bypassed: '跳过 {count} 个（本地链接 / 非版本号）',
+      bypassed: '跳过 {count} 个（本地/远程来源 / 同名不同包 / 非版本号）',
       dragHint: '拖动顶部移动，双击复位',
       appearance: '面板设置',
       appearanceHint: '调整大小、颜色与位置',
@@ -204,7 +204,7 @@ window.__ModuleLoader__.load({
       updated: 'Updated',
       restartHint: 'Restart DSH NEXT to apply',
       lastChecked: 'checked {time}',
-      bypassed: '{count} skipped (local link / no version)',
+      bypassed: '{count} skipped (local or remote source / different package / no version)',
       dragHint: 'Drag the header to move, double-click to reset',
       appearance: 'Panel settings',
       appearanceHint: 'Size, color and position',
@@ -372,7 +372,9 @@ window.__ModuleLoader__.load({
     function entryState(entry) {
       if (entry.status === 'update') return 'update'
       if (entry.status === 'current') return 'current'
-      if (entry.status === 'bypassed') return 'bypassed'
+      // Local links, foreign same-name packages and conflicting bundles are
+      // deliberately skipped instead of being offered as updates.
+      if (entry.status === 'local' || entry.status === 'foreign' || entry.status === 'conflict' || entry.status === 'bypassed') return 'bypassed'
       return comparableVersion(entry.installedVersion) ? 'unknown' : 'bypassed'
     }
 

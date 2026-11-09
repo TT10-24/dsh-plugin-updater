@@ -2,6 +2,31 @@
 
 这份记录按真实迭代顺序整理，保留遇到的问题、错误判断和最终修复，帮助你能理解“为什么代码长这样”。日期来自开发时的会话记录；仓库里最初的 git 历史是为了公开发布而做的结构化导入，不是当年逐日提交的原始记录。
 
+## 2026-11-09 · 0.3.7 同名插件与降级防线
+
+问题：用户反馈更新器“按名字一个个查”，同名插件即使来自另一个项目，只要 npm 上的版本更高就会被提示更新。检查后发现这不只是提示问题：本地 `link:` 安装会被 `removeBundle` 后换成 npm 上的同名包。另有预发布版本被当成降级目标：已装 `1.0.0-beta.10` 时，`1.0.0-beta.2` 反而被算成更新。
+
+根因：
+
+- `installedPackages()` 只按包名合并依赖与 bundle，没有记录来源；`sweepPackages()` 对所有来源都请求 npm。
+- `update()` 没有来源、版本方向和仓库身份的复核。
+- `compareVersions()` 把预发布标识当字符串比较，`beta.10` 排在 `beta.2` 前面。
+
+修复：
+
+- 检查阶段只比较 registry 来源；`link:` / `file:` / `workspace:` / 别名标记 `local`。GitHub / git 来源只有在 registry 包仓库与 spec 仓库一致时才比较，否则 `foreign`。
+- 仓库 URL 归一化成 `host/owner/repo` 后比较；同名不同仓库不再进入更新列表。
+- `update()` 先检查来源、SemVer 格式、是否严格升级、仓库身份，再执行 remove + install。
+- 重写 SemVer 2.0.0 预发布比较；报告加 `schema: 2`，旧缓存不再复用。
+- 同名条目大小写无关合并；版本冲突标记 `conflict`。
+- 新增离线回归 `.check/identity-check.mjs` 并接入 CI；selfcheck 改用动态的升级目标，避免继续测试降级。
+
+验证：
+
+- `.check/identity-check.mjs`：15 个版本比较 + 本地链接、同名不同仓库、GitHub 同仓库/异仓库、降级拒绝、真实更新路径全部通过。
+- `.check/selfcheck.mjs` 在真实 profile 上通过，本地链接的 `dsh-plugin-updater` / `eac-design-world` 正确标为 `local`。
+- 语法、locale、render、drag 检查通过。
+
 ## 2026-10-28 · 0.3.6 面板高度与设置页
 
 问题：把面板放在靠近底部的位置后，面板设置里的高度滑块拉到 620px 以上，面板实际高度不再变化；看起来像滑块“调不动”。原因是面板只设置了 `max-height`，内容较短时不会撑高；同时面板用旧的 `top` 定位，超出视口的部分会被裁掉。另一个问题是打开设置页后，点击面板外侧会触发 document 的 pointerdown，直接把设置页退回主面板。

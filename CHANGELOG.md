@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed same-name plugins being offered as updates.** A plugin installed with `link:`, `file:`, `workspace:` or a git/URL spec is no longer compared with npm by name alone. Local links are reported as local; a GitHub install is only compared when the registry package points at the same repository.
+- **A name collision can no longer replace a different package.** The check now compares the installed package's `repository` with the registry manifest and marks a same-name/different-repository package as `foreign` instead of offering an update.
+- **Updates refuse downgrades and unverified targets.** `update()` re-checks the install source, requires the target to be a concrete version newer than the installed one, and verifies the target repository when one is known.
+- **Version ordering now follows SemVer 2.0.0.** Prerelease numeric identifiers compare as numbers, so `1.0.0-beta.10` ranks above `1.0.0-beta.2`; build metadata is ignored.
+- Installed packages are merged case-insensitively; two bundles that report different versions for one name are marked `conflict` instead of being updated blindly.
+- The report now carries a schema version, so a cached report from an older identity model is discarded.
+- Added an offline regression check (`.check/identity-check.mjs`) to CI, covering local links, same-name/different-repository packages, GitHub installs, downgrades and prerelease ordering.
+
 ## 0.3.6
 
 - **Fixed the panel height slider sometimes appearing to do nothing.** The control is now a real panel height (380–820px), not only a `max-height`; when the panel needs more room, its top edge moves up instead of being clipped by the old position. The label now reads **面板高度 / Panel height**.
